@@ -1,0 +1,174 @@
+{
+  "entities": {
+    "Employee": {
+      "title": "Employee",
+      "description": "Dados cadastrais e profissionais do colaborador",
+      "type": "object",
+      "properties": {
+        "codigo": { "type": "string", "description": "Matrícula ou código único do funcionário" },
+        "nome": { "type": "string", "description": "Nome completo do funcionário" },
+        "cbo": { "type": "string", "description": "Código CBO" },
+        "cargo": { "type": "string", "description": "Cargo ou função" },
+        "departamento": { "type": "string", "description": "Setor ou departamento" },
+        "filial": { "type": "string", "description": "Filial" },
+        "dataAdmissao": { "type": "string", "description": "Data de admissão DD/MM/AAAA" },
+        "salarioBase": { "type": "number", "description": "Salário contratual base" },
+        "cpf": { "type": "string", "description": "CPF do colaborador" },
+        "rg": { "type": "string", "description": "RG" },
+        "pisPasep": { "type": "string", "description": "PIS/PASEP" },
+        "ctps": { "type": "string", "description": "Carteira de Trabalho" },
+        "email": { "type": "string", "description": "E-mail para login e recebimento" },
+        "telefone": { "type": "string", "description": "Celular / WhatsApp com DDD" },
+        "endereco": { "type": "object", "description": "Endereço residencial completo" },
+        "contatosFamiliares": { "type": "array", "description": "Telefones de familiares e emergência" },
+        "dadosBancarios": { "type": "object", "description": "Dados da conta bancária ou chave Pix" },
+        "status": { "type": "string", "enum": ["ATIVO", "AFASTADO", "FERIAS", "DESLIGADO"] },
+        "role": { "type": "string", "enum": ["COLABORADOR", "GESTOR", "ADMIN"] },
+        "authUid": { "type": "string", "description": "ID de autenticação do usuário" }
+      },
+      "required": ["codigo", "nome", "salarioBase"]
+    },
+    "PayReceipt": {
+      "title": "PayReceipt",
+      "description": "Recibo mensal de pagamento / holerite",
+      "type": "object",
+      "properties": {
+        "employeeCodigo": { "type": "string", "description": "Matrícula do funcionário" },
+        "competencia": { "type": "string", "description": "Ano e mês ex: 2026-09" },
+        "mesAno": { "type": "string", "description": "Nome da competência ex: Setembro de 2026" },
+        "tipoFolha": { "type": "string", "description": "Tipo da folha de pagamento" },
+        "empregador": { "type": "object", "description": "Dados do empregador" },
+        "salarioBase": { "type": "number" },
+        "salContrINSS": { "type": "number" },
+        "baseCalcFGTS": { "type": "number" },
+        "fgtsDoMes": { "type": "number" },
+        "baseCalcIRRF": { "type": "number" },
+        "faixaIRRF": { "type": "number" },
+        "totalVencimentos": { "type": "number" },
+        "totalDescontos": { "type": "number" },
+        "valorLiquido": { "type": "number" },
+        "itens": { "type": "array" },
+        "dataEmissao": { "type": "string" },
+        "statusAssinatura": { "type": "string", "enum": ["PENDENTE", "ASSINADO"] },
+        "dataAssinatura": { "type": "string" },
+        "ipAssinatura": { "type": "string" },
+        "codigoAssinatura": { "type": "string" },
+        "metodoAssinatura": { "type": "string" },
+        "historicoEnvios": { "type": "array" }
+      },
+      "required": ["employeeCodigo", "competencia", "totalVencimentos", "valorLiquido"]
+    },
+    "SignatureVerification": {
+      "title": "SignatureVerification",
+      "description": "Código de validação / 2FA para assinatura digital do holerite",
+      "type": "object",
+      "properties": {
+        "codigo": { "type": "string", "description": "Código numérico de 6 dígitos" },
+        "receiptId": { "type": "string", "description": "ID do recibo a assinar" },
+        "employeeCodigo": { "type": "string", "description": "Matrícula do funcionário" },
+        "canal": { "type": "string", "enum": ["EMAIL", "WHATSAPP"] },
+        "destinatario": { "type": "string", "description": "E-mail ou número de telefone" },
+        "criadoEm": { "type": "string" },
+        "status": { "type": "string", "enum": ["PENDENTE", "UTILIZADO", "EXPIRADO"] }
+      },
+      "required": ["codigo", "receiptId", "employeeCodigo", "canal"]
+    },
+    "SystemConfig": {
+      "title": "SystemConfig",
+      "description": "Configurações gerais do sistema gerenciadas pelos gestores",
+      "type": "object",
+      "properties": {
+        "razaoSocial": { "type": "string" },
+        "cei": { "type": "string" },
+        "centroCusto": { "type": "string" },
+        "regime": { "type": "string" },
+        "exigirCodigoAssinatura": { "type": "boolean" },
+        "canalAssinaturaPadrao": { "type": "string", "enum": ["WHATSAPP", "EMAIL", "AMBOS"] },
+        "mensagemWhatsappPadrao": { "type": "string" },
+        "emailRemetente": { "type": "string" },
+        "emailNomeRemetente": { "type": "string" },
+        "emailReplyTo": { "type": "string" },
+        "emailProvider": { "type": "string", "enum": ["SMTP", "GMAIL_APP", "RESEND", "SENDGRID", "INTEGRADO"] },
+        "smtpHost": { "type": "string" },
+        "smtpPort": { "type": "number" },
+        "smtpUser": { "type": "string" },
+        "smtpPassword": { "type": "string" },
+        "smtpSecure": { "type": "boolean" },
+        "emailApiKey": { "type": "string" },
+        "emailTemplateAssunto": { "type": "string" },
+        "emailTemplateCorpo": { "type": "string" },
+        "diasPrazoAssinatura": { "type": "number" }
+      },
+      "required": ["razaoSocial", "cei"]
+    },
+    "UserAccount": {
+      "title": "UserAccount",
+      "description": "Conta de usuário com papel no sistema",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["GESTOR", "COLABORADOR"] },
+        "employeeCodigo": { "type": "string" },
+        "nome": { "type": "string" },
+        "criadoEm": { "type": "string" }
+      },
+      "required": ["email", "role"]
+    },
+    "MedicalCertificate": {
+      "title": "MedicalCertificate",
+      "description": "Atestados médicos enviados pelos colaboradores para arquivamento e abono de faltas",
+      "type": "object",
+      "properties": {
+        "employeeCodigo": { "type": "string", "description": "Matrícula do colaborador" },
+        "employeeNome": { "type": "string", "description": "Nome do colaborador" },
+        "employeeCpf": { "type": "string" },
+        "employeeDepartamento": { "type": "string" },
+        "dataEmissaoAtestado": { "type": "string", "description": "Data do atestado YYYY-MM-DD" },
+        "dataInicioAfastamento": { "type": "string", "description": "Data de início do afastamento YYYY-MM-DD" },
+        "diasAfastamento": { "type": "number", "description": "Quantidade de dias de afastamento médico" },
+        "dataRetorno": { "type": "string", "description": "Data prevista de retorno ao trabalho" },
+        "cid": { "type": "string", "description": "Código CID-10 (opcional)" },
+        "nomeMedico": { "type": "string", "description": "Nome do médico ou dentista emitente" },
+        "crmMedico": { "type": "string", "description": "CRM/CRO e UF do profissional" },
+        "tipoAtestado": { "type": "string", "enum": ["MEDICO", "ODONTOLOGICO", "COMPARECIMENTO", "ACOMPANHAMENTO", "DECLARACAO_HORAS"] },
+        "motivoObservacao": { "type": "string" },
+        "arquivoNome": { "type": "string" },
+        "arquivoBase64": { "type": "string" },
+        "arquivoTipo": { "type": "string" },
+        "arquivoTamanhoBytes": { "type": "number" },
+        "status": { "type": "string", "enum": ["PENDENTE", "APROVADO", "REJEITADO", "ARQUIVADO"] },
+        "criadoEm": { "type": "string" },
+        "analisadoPor": { "type": "string" },
+        "analisadoEm": { "type": "string" },
+        "parecerRH": { "type": "string" }
+      },
+      "required": ["employeeCodigo", "dataEmissaoAtestado", "diasAfastamento", "arquivoBase64", "status"]
+    }
+  },
+  "firestore": {
+    "/employees/{employeeId}": {
+      "schema": "Employee",
+      "description": "Armazenamento dos dados cadastrais dos colaboradores"
+    },
+    "/receipts/{receiptId}": {
+      "schema": "PayReceipt",
+      "description": "Holerites emitidos para os colaboradores"
+    },
+    "/signatureVerifications/{verificationId}": {
+      "schema": "SignatureVerification",
+      "description": "Códigos de validação de assinatura digital via WhatsApp e E-mail"
+    },
+    "/systemConfig/{configId}": {
+      "schema": "SystemConfig",
+      "description": "Configurações do sistema para os gestores"
+    },
+    "/users/{userId}": {
+      "schema": "UserAccount",
+      "description": "Contas de acesso e permissões"
+    },
+    "/medicalCertificates/{certificateId}": {
+      "schema": "MedicalCertificate",
+      "description": "Atestados médicos enviados pelos colaboradores arquivados no banco de dados"
+    }
+  }
+}

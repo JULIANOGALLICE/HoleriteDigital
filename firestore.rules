@@ -1,0 +1,72 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isManager() {
+      return isSignedIn() && (
+        request.auth.token.email == 'julianogallice@gmail.com' ||
+        request.auth.token.email == 'JulianoGallice@gmail.com' ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'GESTOR')
+      );
+    }
+
+    function isOwnerUser(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Users collection
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && (isOwnerUser(userId) || isManager());
+    }
+
+    // Employees collection
+    match /employees/{employeeId} {
+      allow read, write: if true;
+    }
+
+    // Receipts collection
+    match /receipts/{receiptId} {
+      allow read, write: if true;
+    }
+
+    // Signature verification codes for 2FA digital signature
+    match /signatureVerifications/{verificationId} {
+      // Criação de token 2FA para assinatura digital
+      allow create: if request.resource.data.status in ['PENDENTE', 'CONFIRMADO'] &&
+                       request.resource.data.codigo is string &&
+                       request.resource.data.receiptId is string;
+      // Leitura para conferência do código OTP informado pelo colaborador
+      allow read: if true;
+      // Atualização de status ao validar o código
+      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
+                       request.resource.data.status in ['PENDENTE', 'CONFIRMADO', 'UTILIZADO', 'EXPIRADO'];
+      allow delete: if isManager();
+    }
+
+    // System configurations
+    match /systemConfig/{configId} {
+      allow read, write: if true;
+    }
+
+    // Medical certificates (Atestados Médicos) collection
+    match /medicalCertificates/{certificateId} {
+      allow read, write: if true;
+    }
+
+    // Comprovantes de Rendimentos (IRPF) collection
+    match /incomeReports/{reportId} {
+      allow read, write: if true;
+    }
+  }
+}

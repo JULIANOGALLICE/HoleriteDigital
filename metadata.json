@@ -1,0 +1,6 @@
+{
+  "name": "HoleriteDigital - Portal do Colaborador & Gestão de Pagamentos",
+  "description": "Sistema completo de recibos de pagamento, processador automático de PDFs de folha, histórico mensal, download em PDF, envio por WhatsApp e e-mail.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
