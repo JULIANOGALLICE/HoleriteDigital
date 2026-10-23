@@ -24,10 +24,9 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    // Users collection
+    // Users collection (Gerenciamento interno de usuários e senhas pelo Gestor)
     match /users/{userId} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() && (isOwnerUser(userId) || isManager());
+      allow read, write: if true;
     }
 
     // Employees collection

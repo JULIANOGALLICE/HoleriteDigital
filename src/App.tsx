@@ -148,7 +148,7 @@ export default function App() {
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  // 1. Test connection to Firestore on boot (per SKILL.md) & load persistent server config
+  // 1. Test connection to Firestore on boot (per SKILL.md) & load persistent server config and data backups
   useEffect(() => {
     testConnection().then(connected => {
       setIsFirebaseConnected(connected);
@@ -177,19 +177,99 @@ export default function App() {
         }
       })
       .catch(() => {});
+
+    // Fetch permanent server-side backups for users, employees, and receipts
+    fetch('/api/users')
+      .then(res => res.json())
+      .then(data => {
+        if (data?.success && Array.isArray(data.users) && data.users.length > 0) {
+          setUsers(prev => {
+            const map = new Map<string, UserAccount>();
+            prev.forEach(u => map.set(u.uid || (u.employeeCodigo ? `user-${u.employeeCodigo}` : u.email.toLowerCase()), u));
+            data.users.forEach((u: UserAccount) => {
+              const key = u.uid || (u.employeeCodigo ? `user-${u.employeeCodigo}` : u.email.toLowerCase());
+              map.set(key, u);
+            });
+            const list = Array.from(map.values());
+            try { localStorage.setItem(STORAGE_KEY_USERS, JSON.stringify(list)); } catch (e) {}
+            return list;
+          });
+        }
+      })
+      .catch(() => {});
+
+    fetch('/api/employees')
+      .then(res => res.json())
+      .then(data => {
+        if (data?.success && Array.isArray(data.employees) && data.employees.length > 0) {
+          setEmployees(prev => {
+            const map = new Map<string, Employee>();
+            prev.forEach(e => map.set(e.codigo, e));
+            data.employees.forEach((e: Employee) => map.set(e.codigo, e));
+            const list = Array.from(map.values());
+            try { localStorage.setItem(STORAGE_KEY_EMPLOYEES, JSON.stringify(list)); } catch (e) {}
+            return list;
+          });
+        }
+      })
+      .catch(() => {});
+
+    fetch('/api/receipts')
+      .then(res => res.json())
+      .then(data => {
+        if (data?.success && Array.isArray(data.receipts) && data.receipts.length > 0) {
+          setReceipts(prev => {
+            const map = new Map<string, PayReceipt>();
+            prev.forEach(r => map.set(r.id, r));
+            data.receipts.forEach((r: PayReceipt) => map.set(r.id, r));
+            const list = Array.from(map.values());
+            try { localStorage.setItem(STORAGE_KEY_RECEIPTS, JSON.stringify(list)); } catch (e) {}
+            return list;
+          });
+        }
+      })
+      .catch(() => {});
   }, []);
 
-  // 2. Setup Firestore Realtime Listeners
+  // 2. Setup Firestore Realtime Listeners with non-destructive merge
   useEffect(() => {
     const unsubEmployees = subscribeEmployees((remoteEmployees) => {
-      if (remoteEmployees.length > 0) {
-        setEmployees(remoteEmployees);
+      if (remoteEmployees && remoteEmployees.length > 0) {
+        setEmployees(prevEmployees => {
+          const map = new Map<string, Employee>();
+          remoteEmployees.forEach(e => map.set(e.codigo, e));
+          prevEmployees.forEach(e => {
+            if (!map.has(e.codigo)) {
+              map.set(e.codigo, e);
+              saveEmployeeFirestore(e).catch(() => {});
+            }
+          });
+          const merged = Array.from(map.values());
+          try {
+            localStorage.setItem(STORAGE_KEY_EMPLOYEES, JSON.stringify(merged));
+          } catch (e) {}
+          return merged;
+        });
       }
     });
 
     const unsubReceipts = subscribeReceipts((remoteReceipts) => {
-      if (remoteReceipts.length > 0) {
-        setReceipts(remoteReceipts);
+      if (remoteReceipts && remoteReceipts.length > 0) {
+        setReceipts(prevReceipts => {
+          const map = new Map<string, PayReceipt>();
+          remoteReceipts.forEach(r => map.set(r.id, r));
+          prevReceipts.forEach(r => {
+            if (!map.has(r.id)) {
+              map.set(r.id, r);
+              saveReceiptFirestore(r).catch(() => {});
+            }
+          });
+          const merged = Array.from(map.values());
+          try {
+            localStorage.setItem(STORAGE_KEY_RECEIPTS, JSON.stringify(merged));
+          } catch (e) {}
+          return merged;
+        });
       }
     });
 
@@ -220,8 +300,45 @@ export default function App() {
     });
 
     const unsubUsers = subscribeUsers((remoteUsers) => {
-      if (remoteUsers.length > 0) {
-        setUsers(remoteUsers);
+      if (remoteUsers && remoteUsers.length > 0) {
+        setUsers(prevUsers => {
+          const map = new Map<string, UserAccount>();
+
+          // First add all remote users from Firestore
+          remoteUsers.forEach(u => {
+            const key = u.uid || (u.employeeCodigo ? `user-${u.employeeCodigo}` : u.email.toLowerCase());
+            map.set(key, u);
+          });
+
+          // Prevent deletion: preserve any local users not yet synced or with passwords configured
+          prevUsers.forEach(u => {
+            const key = u.uid || (u.employeeCodigo ? `user-${u.employeeCodigo}` : u.email.toLowerCase());
+            const existing = map.get(key);
+            if (!existing) {
+              map.set(key, u);
+              saveUserAccount(u).catch(() => {});
+            } else if (u.senha && (!existing.senha || existing.senha.trim() === '')) {
+              // Local has configured password, keep it and sync to Firestore
+              const merged = { ...existing, senha: u.senha };
+              map.set(key, merged);
+              saveUserAccount(merged).catch(() => {});
+            }
+          });
+
+          const mergedList = Array.from(map.values());
+          try {
+            localStorage.setItem(STORAGE_KEY_USERS, JSON.stringify(mergedList));
+          } catch (e) {}
+          return mergedList;
+        });
+      } else {
+        // If Firestore has 0 users, seed it with initial/local users
+        setUsers(prevUsers => {
+          if (prevUsers.length > 0) {
+            saveUsersBatchFirestore(prevUsers).catch(() => {});
+          }
+          return prevUsers;
+        });
       }
     });
 
@@ -398,12 +515,19 @@ export default function App() {
   };
 
   const handleCommitParsedData = async (newOrUpdatedEmployees: Employee[], newReceipts: PayReceipt[]) => {
+    let finalEmployees: Employee[] = [];
+    let finalReceipts: PayReceipt[] = [];
+
     // Merge employees by codigo
     setEmployees(prev => {
       const map = new Map<string, Employee>();
       prev.forEach(emp => map.set(emp.codigo, emp));
       newOrUpdatedEmployees.forEach(emp => map.set(emp.codigo, emp));
-      return Array.from(map.values());
+      finalEmployees = Array.from(map.values());
+      try {
+        localStorage.setItem(STORAGE_KEY_EMPLOYEES, JSON.stringify(finalEmployees));
+      } catch (e) {}
+      return finalEmployees;
     });
 
     // Merge receipts by id
@@ -411,7 +535,11 @@ export default function App() {
       const map = new Map<string, PayReceipt>();
       prev.forEach(r => map.set(r.id, r));
       newReceipts.forEach(r => map.set(r.id, r));
-      return Array.from(map.values());
+      finalReceipts = Array.from(map.values());
+      try {
+        localStorage.setItem(STORAGE_KEY_RECEIPTS, JSON.stringify(finalReceipts));
+      } catch (e) {}
+      return finalReceipts;
     });
 
     // Persist each in Firestore
@@ -421,6 +549,24 @@ export default function App() {
     for (const rec of newReceipts) {
       saveReceiptFirestore(rec).catch(() => {});
     }
+
+    // Also persist to server disk (VPS backup)
+    setTimeout(() => {
+      if (finalEmployees.length > 0) {
+        fetch('/api/employees', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ employees: finalEmployees })
+        }).catch(() => {});
+      }
+      if (finalReceipts.length > 0) {
+        fetch('/api/receipts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ receipts: finalReceipts })
+        }).catch(() => {});
+      }
+    }, 100);
 
     // Cadastro automático dos colaboradores importados em Usuários vinculando nome e matrícula
     const usersToPersist: UserAccount[] = [];
@@ -445,7 +591,7 @@ export default function App() {
           updatedList[existingIdx] = linkedUser;
           usersToPersist.push(linkedUser);
         } else {
-          // Cria o registro do usuário sem inventar dados
+          // Cria o registro do usuário
           const newUser: UserAccount = {
             uid: `user-${emp.codigo}`,
             nome: emp.nome,
@@ -467,6 +613,13 @@ export default function App() {
       try {
         localStorage.setItem(STORAGE_KEY_USERS, JSON.stringify(updatedList));
       } catch (e) {}
+
+      // Backup users to server disk
+      fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ users: updatedList })
+      }).catch(() => {});
 
       return updatedList;
     });
@@ -550,14 +703,17 @@ export default function App() {
   };
 
   const handleSaveUser = async (userToSave: UserAccount) => {
+    let nextUsersList: UserAccount[] = [];
     setUsers(prev => {
       const idx = prev.findIndex(u => u.uid === userToSave.uid);
       if (idx >= 0) {
         const copy = [...prev];
         copy[idx] = userToSave;
+        nextUsersList = copy;
         return copy;
       }
-      return [...prev, userToSave];
+      nextUsersList = [...prev, userToSave];
+      return nextUsersList;
     });
 
     if (currentUser && currentUser.uid === userToSave.uid) {
@@ -586,12 +742,26 @@ export default function App() {
     } catch (e) {
       console.warn('Saved user locally');
     }
+
+    // Also persist users array to server disk
+    setTimeout(() => {
+      if (nextUsersList.length > 0) {
+        fetch('/api/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ users: nextUsersList })
+        }).catch(() => {});
+      }
+    }, 50);
+
     showToast(`Usuário ${userToSave.nome} salvo com sucesso!`);
   };
 
   const handleDeleteUser = async (uid: string) => {
+    let nextList: UserAccount[] = [];
     setUsers(prev => {
       const updated = prev.filter(u => u.uid !== uid);
+      nextList = updated;
       try {
         localStorage.setItem(STORAGE_KEY_USERS, JSON.stringify(updated));
       } catch (e) {}
@@ -602,6 +772,15 @@ export default function App() {
     } catch (e) {
       console.warn('Deleted user locally');
     }
+
+    // Sync updated list to server disk
+    setTimeout(() => {
+      fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ users: nextList })
+      }).catch(() => {});
+    }, 50);
   };
 
   const handleUploadMedicalCertificate = async (cert: MedicalCertificate) => {

@@ -323,9 +323,10 @@ export function subscribeUsers(callback: (users: UserAccount[]) => void) {
 }
 
 export async function saveUserAccount(user: UserAccount): Promise<void> {
-  const path = `users/${user.uid}`;
+  const uid = user.uid || (user.employeeCodigo ? `user-${user.employeeCodigo}` : `user-${Date.now()}`);
+  const payload = cleanUndefined({ ...user, uid });
   try {
-    await setDoc(doc(db, 'users', user.uid), cleanUndefined(user), { merge: true });
+    await setDoc(doc(db, 'users', uid), payload, { merge: true });
   } catch (error) {
     console.warn('saveUserAccount notice:', error);
   }
@@ -333,20 +334,40 @@ export async function saveUserAccount(user: UserAccount): Promise<void> {
 
 export async function saveUsersBatchFirestore(usersList: UserAccount[]): Promise<void> {
   if (!usersList || usersList.length === 0) return;
-  try {
-    const batch = writeBatch(db);
-    usersList.forEach(user => {
-      const ref = doc(db, 'users', user.uid);
-      batch.set(ref, cleanUndefined(user), { merge: true });
-    });
-    await batch.commit();
-  } catch (error) {
-    console.warn('saveUsersBatchFirestore notice:', error);
+  // Chunking in slices of 150 documents to stay well below Firestore 500 limits
+  const CHUNK_SIZE = 150;
+  for (let i = 0; i < usersList.length; i += CHUNK_SIZE) {
+    const chunk = usersList.slice(i, i + CHUNK_SIZE);
+    try {
+      const batch = writeBatch(db);
+      chunk.forEach(user => {
+        const uid = user.uid || (user.employeeCodigo ? `user-${user.employeeCodigo}` : `user-${Date.now()}`);
+        const ref = doc(db, 'users', uid);
+        batch.set(ref, cleanUndefined({ ...user, uid }), { merge: true });
+      });
+      await batch.commit();
+    } catch (batchError) {
+      console.warn('saveUsersBatchFirestore chunk batch error, falling back to individual sets:', batchError);
+      await Promise.allSettled(
+        chunk.map(user => {
+          const uid = user.uid || (user.employeeCodigo ? `user-${user.employeeCodigo}` : `user-${Date.now()}`);
+          return setDoc(doc(db, 'users', uid), cleanUndefined({ ...user, uid }), { merge: true });
+        })
+      );
+    }
   }
+
+  // Also sync to server-side permanent disk storage if backend route is available
+  try {
+    fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ users: usersList })
+    }).catch(() => {});
+  } catch (e) {}
 }
 
 export async function deleteUserAccountFirestore(uid: string): Promise<void> {
-  const path = `users/${uid}`;
   try {
     await deleteDoc(doc(db, 'users', uid));
   } catch (error) {

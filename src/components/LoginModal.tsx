@@ -10,7 +10,9 @@ import {
   LogIn,
   AlertCircle,
   ShieldCheck,
-  FileText
+  FileText,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -36,10 +38,12 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   // Credentials for Gestor
   const [gestorEmail, setGestorEmail] = useState('');
   const [gestorPassword, setGestorPassword] = useState('');
+  const [showGestorPassword, setShowGestorPassword] = useState(false);
 
   // Credentials for Colaborador
   const [colabIdentifier, setColabIdentifier] = useState('');
   const [colabPassword, setColabPassword] = useState('');
+  const [showColabPassword, setShowColabPassword] = useState(false);
 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -50,13 +54,14 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     e.preventDefault();
     setErrorMessage(null);
 
-    const cleanEmail = gestorEmail.trim().toLowerCase();
+    const cleanEmail = gestorEmail.trim().replace(/\u00A0/g, ' ').toLowerCase();
     const cleanPassword = gestorPassword.trim();
 
     // 1. Check if user is in users database as GESTOR
     const existingGestor = users.find(u => u.email.toLowerCase() === cleanEmail && u.role === 'GESTOR');
     if (existingGestor) {
-      if (existingGestor.senha && existingGestor.senha !== cleanPassword) {
+      const storedPass = String(existingGestor.senha || '').trim();
+      if (storedPass && storedPass !== cleanPassword && existingGestor.senha !== gestorPassword) {
         setErrorMessage('Senha incorreta para o gestor informado.');
         return;
       }
@@ -95,7 +100,8 @@ export const LoginModal: React.FC<LoginModalProps> = ({
         setErrorMessage('Este e-mail pertence a um Colaborador. Selecione "Portal do Colaborador" acima.');
         return;
       }
-      if (anyUser.senha && anyUser.senha !== cleanPassword) {
+      const storedPass = String(anyUser.senha || '').trim();
+      if (storedPass && storedPass !== cleanPassword && anyUser.senha !== gestorPassword) {
         setErrorMessage('Senha incorreta.');
         return;
       }
@@ -112,36 +118,65 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     e.preventDefault();
     setErrorMessage(null);
 
-    const cleanInput = colabIdentifier.trim().toLowerCase();
+    // Clean input removing mobile invisible chars and whitespace
+    const cleanInput = colabIdentifier.trim().replace(/\u00A0/g, ' ').toLowerCase();
     const cleanDigits = cleanInput.replace(/\D/g, '');
     const cleanPassword = colabPassword.trim();
 
     // 1. Find employee by codigo, email, or cpf
-    const emp = employees.find(
-      e =>
-        e.codigo.toLowerCase() === cleanInput ||
-        e.email.toLowerCase() === cleanInput ||
-        (cleanDigits && e.cpf && e.cpf.replace(/\D/g, '') === cleanDigits)
-    );
+    const emp = employees.find(e => {
+      const eCod = String(e.codigo || '').trim().toLowerCase();
+      const eCodDigits = eCod.replace(/\D/g, '');
+      const eEmail = String(e.email || '').trim().toLowerCase();
+      const eCpfDigits = String(e.cpf || '').replace(/\D/g, '');
+
+      if (eCod && eCod === cleanInput) return true;
+      if (cleanDigits && eCodDigits && eCodDigits === cleanDigits) return true;
+      if (eEmail && eEmail === cleanInput) return true;
+      if (cleanDigits && eCpfDigits && eCpfDigits === cleanDigits) return true;
+      return false;
+    });
 
     // 2. Check if there is a corresponding UserAccount
-    const userAcc = users.find(
-      u =>
-        u.role === 'COLABORADOR' &&
-        (u.email.toLowerCase() === cleanInput ||
-          (emp && u.employeeCodigo === emp.codigo) ||
-          u.employeeCodigo === cleanInput)
-    );
+    const userAcc = users.find(u => {
+      if (u.role !== 'COLABORADOR') return false;
+
+      const uEmail = String(u.email || '').trim().toLowerCase();
+      const uCod = String(u.employeeCodigo || '').trim().toLowerCase();
+      const uCodDigits = uCod.replace(/\D/g, '');
+      const uNome = String(u.nome || '').trim().toLowerCase();
+
+      // Direct match by email or employee code typed
+      if (uEmail && uEmail === cleanInput) return true;
+      if (uCod && uCod === cleanInput) return true;
+      if (cleanDigits && uCodDigits && uCodDigits === cleanDigits) return true;
+
+      // Link via found employee
+      if (emp) {
+        const empCod = String(emp.codigo || '').trim().toLowerCase();
+        const empCodDigits = empCod.replace(/\D/g, '');
+        const empEmail = String(emp.email || '').trim().toLowerCase();
+        const empNome = String(emp.nome || '').trim().toLowerCase();
+
+        if (uCod && empCod && uCod === empCod) return true;
+        if (uCodDigits && empCodDigits && uCodDigits === empCodDigits) return true;
+        if (uEmail && empEmail && uEmail === empEmail) return true;
+        if (uNome && empNome && (uNome === empNome || uNome.includes(empNome) || empNome.includes(uNome))) return true;
+      }
+
+      return false;
+    });
 
     if (userAcc) {
       if (!userAcc.senha || userAcc.senha.trim() === '') {
         setErrorMessage(
-          `Olá, ${emp?.nome || userAcc.nome}! Seu cadastro foi importado com sucesso, porém o Gestor do RH ainda não cadastrou seu e-mail e sua senha inicial de acesso. Solicite a liberação ao RH.`
+          `Olá, ${emp?.nome || userAcc.nome}! Seu cadastro foi importado com sucesso, porém o Gestor do RH ainda não cadastrou sua senha inicial de acesso. Solicite a liberação ao RH.`
         );
         return;
       }
 
-      if (userAcc.senha !== cleanPassword) {
+      const storedPass = String(userAcc.senha || '').trim();
+      if (storedPass !== cleanPassword && userAcc.senha !== colabPassword) {
         setErrorMessage('Senha de acesso individual incorreta. Digite a senha inicial fornecida pelo RH ou solicite a redefinição.');
         return;
       }
@@ -292,6 +327,10 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                   value={colabIdentifier}
                   onChange={(e) => setColabIdentifier(e.target.value)}
                   placeholder="Digite sua matrícula, CPF ou e-mail"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  autoComplete="username"
                   className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
                   required
                 />
@@ -301,14 +340,28 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                 <label className="block text-slate-700 font-semibold mb-1">
                   Senha Individual
                 </label>
-                <input
-                  type="password"
-                  value={colabPassword}
-                  onChange={(e) => setColabPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  required
-                />
+                <div className="relative">
+                  <input
+                    type={showColabPassword ? "text" : "password"}
+                    value={colabPassword}
+                    onChange={(e) => setColabPassword(e.target.value)}
+                    placeholder="••••••••"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    autoComplete="current-password"
+                    className="w-full pl-3 pr-10 py-2.5 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowColabPassword(!showColabPassword)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
+                    tabIndex={-1}
+                  >
+                    {showColabPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
 
               {errorMessage && (
@@ -341,6 +394,10 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                   value={gestorEmail}
                   onChange={(e) => setGestorEmail(e.target.value)}
                   placeholder="Informe seu e-mail administrativo"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  autoComplete="email"
                   className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
                   required
                 />
@@ -350,14 +407,28 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                 <label className="block text-slate-700 font-semibold mb-1">
                   Senha de Acesso
                 </label>
-                <input
-                  type="password"
-                  value={gestorPassword}
-                  onChange={(e) => setGestorPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  required
-                />
+                <div className="relative">
+                  <input
+                    type={showGestorPassword ? "text" : "password"}
+                    value={gestorPassword}
+                    onChange={(e) => setGestorPassword(e.target.value)}
+                    placeholder="••••••••"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    autoComplete="current-password"
+                    className="w-full pl-3 pr-10 py-2.5 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowGestorPassword(!showGestorPassword)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
+                    tabIndex={-1}
+                  >
+                    {showGestorPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
 
               {errorMessage && (

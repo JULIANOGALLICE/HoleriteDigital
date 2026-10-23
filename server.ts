@@ -194,8 +194,11 @@ async function createMailTransporter(config: any) {
   };
 }
 
-// Config persistence on server disk
+// Config and database persistence on server disk
 const CONFIG_FILE = path.resolve(__dirname, 'system-config.json');
+const USERS_FILE = path.resolve(__dirname, 'users-data.json');
+const EMPLOYEES_FILE = path.resolve(__dirname, 'employees-data.json');
+const RECEIPTS_FILE = path.resolve(__dirname, 'receipts-data.json');
 
 // 0. API: Get & Save System Configuration (Permanent Server-Side Storage)
 app.get('/api/config', (_req, res) => {
@@ -221,6 +224,90 @@ app.post('/api/config', (req, res) => {
     return res.status(400).json({ success: false, message: 'Objeto de configuração inválido.' });
   } catch (err: any) {
     console.error('Error writing system-config.json:', err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// API: Servidor permanente de Usuários (Back-up no disco da VPS)
+app.get('/api/users', (_req, res) => {
+  try {
+    if (fs.existsSync(USERS_FILE)) {
+      const content = fs.readFileSync(USERS_FILE, 'utf-8');
+      const data = JSON.parse(content);
+      return res.json({ success: true, users: Array.isArray(data) ? data : [] });
+    }
+  } catch (err: any) {
+    console.error('Error reading users-data.json:', err);
+  }
+  return res.json({ success: true, users: [] });
+});
+
+app.post('/api/users', (req, res) => {
+  try {
+    const { users } = req.body;
+    if (Array.isArray(users)) {
+      fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf-8');
+      return res.json({ success: true, message: 'Usuários gravados com sucesso no disco do servidor.' });
+    }
+    return res.status(400).json({ success: false, message: 'Array de usuários inválido.' });
+  } catch (err: any) {
+    console.error('Error writing users-data.json:', err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// API: Servidor permanente de Colaboradores (Back-up no disco da VPS)
+app.get('/api/employees', (_req, res) => {
+  try {
+    if (fs.existsSync(EMPLOYEES_FILE)) {
+      const content = fs.readFileSync(EMPLOYEES_FILE, 'utf-8');
+      const data = JSON.parse(content);
+      return res.json({ success: true, employees: Array.isArray(data) ? data : [] });
+    }
+  } catch (err: any) {
+    console.error('Error reading employees-data.json:', err);
+  }
+  return res.json({ success: true, employees: [] });
+});
+
+app.post('/api/employees', (req, res) => {
+  try {
+    const { employees } = req.body;
+    if (Array.isArray(employees)) {
+      fs.writeFileSync(EMPLOYEES_FILE, JSON.stringify(employees, null, 2), 'utf-8');
+      return res.json({ success: true, message: 'Colaboradores gravados com sucesso no disco do servidor.' });
+    }
+    return res.status(400).json({ success: false, message: 'Array de colaboradores inválido.' });
+  } catch (err: any) {
+    console.error('Error writing employees-data.json:', err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// API: Servidor permanente de Recibos/Holerites (Back-up no disco da VPS)
+app.get('/api/receipts', (_req, res) => {
+  try {
+    if (fs.existsSync(RECEIPTS_FILE)) {
+      const content = fs.readFileSync(RECEIPTS_FILE, 'utf-8');
+      const data = JSON.parse(content);
+      return res.json({ success: true, receipts: Array.isArray(data) ? data : [] });
+    }
+  } catch (err: any) {
+    console.error('Error reading receipts-data.json:', err);
+  }
+  return res.json({ success: true, receipts: [] });
+});
+
+app.post('/api/receipts', (req, res) => {
+  try {
+    const { receipts } = req.body;
+    if (Array.isArray(receipts)) {
+      fs.writeFileSync(RECEIPTS_FILE, JSON.stringify(receipts, null, 2), 'utf-8');
+      return res.json({ success: true, message: 'Recibos gravados com sucesso no disco do servidor.' });
+    }
+    return res.status(400).json({ success: false, message: 'Array de recibos inválido.' });
+  } catch (err: any) {
+    console.error('Error writing receipts-data.json:', err);
     return res.status(500).json({ success: false, message: err.message });
   }
 });
