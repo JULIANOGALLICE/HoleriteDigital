@@ -388,6 +388,8 @@ export async function clearAllDatabaseData(): Promise<void> {
 }
 
 // 5. Medical Certificates (Atestados Médicos)
+const MAX_SINGLE_DOC_BASE64_LENGTH = 650000; // ~650 KB string safely inside Firestore 1 MiB limit
+
 export function subscribeMedicalCertificates(
   callback: (certificates: MedicalCertificate[]) => void,
   onError?: (err: any) => void
@@ -396,10 +398,35 @@ export function subscribeMedicalCertificates(
   return onSnapshot(
     collection(db, path),
     (snapshot) => {
-      const list: MedicalCertificate[] = [];
+      const rawCerts: Array<MedicalCertificate & { chunkCount?: number }> = [];
+      const chunksByParent: Record<string, Array<{ chunkIndex: number; chunkData: string }>> = {};
+
       snapshot.forEach(docSnap => {
-        list.push({ ...(docSnap.data() as MedicalCertificate), id: docSnap.id });
+        const data = docSnap.data() as any;
+        if (data?.isChunk && data?.parentId) {
+          if (!chunksByParent[data.parentId]) {
+            chunksByParent[data.parentId] = [];
+          }
+          chunksByParent[data.parentId].push({
+            chunkIndex: Number(data.chunkIndex || 0),
+            chunkData: String(data.chunkData || '')
+          });
+        } else {
+          rawCerts.push({ ...(data as MedicalCertificate), id: docSnap.id });
+        }
       });
+
+      const list: MedicalCertificate[] = rawCerts.map(cert => {
+        if (cert.arquivoBase64 === '__CHUNKED__' && chunksByParent[cert.id]) {
+          const sortedChunks = chunksByParent[cert.id].sort((a, b) => a.chunkIndex - b.chunkIndex);
+          return {
+            ...cert,
+            arquivoBase64: sortedChunks.map(c => c.chunkData).join('')
+          };
+        }
+        return cert;
+      });
+
       // Sort newest first
       list.sort((a, b) => (b.criadoEm || '').localeCompare(a.criadoEm || ''));
       callback(list);
@@ -413,12 +440,55 @@ export function subscribeMedicalCertificates(
 
 export async function saveMedicalCertificateFirestore(certificate: MedicalCertificate): Promise<void> {
   const certId = certificate.id || `cert-${Date.now()}`;
-  const data = cleanUndefined({ ...certificate, id: certId });
+  const base64Str = certificate.arquivoBase64 || '';
+
   try {
-    await setDoc(doc(db, 'medicalCertificates', certId), data, { merge: true });
-  } catch (error) {
+    if (base64Str.length > MAX_SINGLE_DOC_BASE64_LENGTH) {
+      const chunks: string[] = [];
+      for (let i = 0; i < base64Str.length; i += MAX_SINGLE_DOC_BASE64_LENGTH) {
+        chunks.push(base64Str.slice(i, i + MAX_SINGLE_DOC_BASE64_LENGTH));
+      }
+
+      if (chunks.length > 12) {
+        throw new Error('O arquivo anexado excede o limite máximo suportado pelo banco de dados (máx. 5 MB).');
+      }
+
+      // Save chunks first so when main doc triggers listener, chunks are ready
+      for (let idx = 0; idx < chunks.length; idx++) {
+        const chunkDocId = `${certId}_chunk_${idx}`;
+        await setDoc(doc(db, 'medicalCertificates', chunkDocId), {
+          isChunk: true,
+          parentId: certId,
+          chunkIndex: idx,
+          chunkData: chunks[idx],
+          criadoEm: certificate.criadoEm || new Date().toISOString()
+        });
+      }
+
+      const mainData = cleanUndefined({
+        ...certificate,
+        id: certId,
+        arquivoBase64: '__CHUNKED__',
+        chunkCount: chunks.length
+      });
+      await setDoc(doc(db, 'medicalCertificates', certId), mainData, { merge: true });
+    } else {
+      const data = cleanUndefined({ ...certificate, id: certId });
+      await setDoc(doc(db, 'medicalCertificates', certId), data, { merge: true });
+    }
+  } catch (error: any) {
     console.warn('saveMedicalCertificateFirestore error:', error);
-    throw error;
+    const rawMsg = error?.message || String(error);
+    if (rawMsg.includes('longer than') || rawMsg.includes('exceeds the maximum allowed size') || rawMsg.includes('resource-exhausted')) {
+      throw new Error('A foto ou arquivo é muito grande para o banco de dados (limite excedido). Tente tirar uma foto mais próxima ou enviar um arquivo menor.');
+    }
+    if (rawMsg.includes('permission-denied') || rawMsg.includes('Missing or insufficient permissions')) {
+      throw new Error('Permissão negada no banco de dados ao salvar o atestado.');
+    }
+    if (rawMsg.includes('network') || rawMsg.includes('Failed to fetch') || rawMsg.includes('offline')) {
+      throw new Error('Falha de conexão com a internet ao enviar o atestado. Verifique seu sinal e tente novamente.');
+    }
+    throw new Error(`Falha ao gravar no banco de dados (${rawMsg})`);
   }
 }
 
@@ -445,6 +515,10 @@ export async function updateMedicalCertificateStatusFirestore(
 export async function deleteMedicalCertificateFirestore(id: string): Promise<void> {
   try {
     await deleteDoc(doc(db, 'medicalCertificates', id));
+    // Also clean up any possible chunks in background
+    for (let i = 0; i < 12; i++) {
+      deleteDoc(doc(db, 'medicalCertificates', `${id}_chunk_${i}`)).catch(() => {});
+    }
   } catch (error) {
     console.warn('deleteMedicalCertificateFirestore error:', error);
     throw error;

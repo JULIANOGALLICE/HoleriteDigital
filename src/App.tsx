@@ -607,10 +607,15 @@ export default function App() {
   const handleUploadMedicalCertificate = async (cert: MedicalCertificate) => {
     try {
       await saveMedicalCertificateFirestore(cert);
-      showToast('Atestado médico arquivado com sucesso no banco de dados!');
-    } catch (err) {
-      console.error(err);
-      showToast('Erro ao arquivar atestado médico.');
+      setMedicalCertificates(prev => {
+        const exists = prev.some(c => c.id === cert.id);
+        return exists ? prev.map(c => (c.id === cert.id ? cert : c)) : [cert, ...prev];
+      });
+      showToast('Atestado médico enviado e arquivado com sucesso!');
+    } catch (err: any) {
+      console.error('Erro ao arquivar atestado médico:', err);
+      const reason = err?.message || 'Falha desconhecida ao comunicar com o servidor.';
+      showToast(`Erro ao enviar atestado: ${reason}`);
       throw err;
     }
   };
