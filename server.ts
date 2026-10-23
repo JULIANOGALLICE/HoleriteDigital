@@ -1264,6 +1264,31 @@ app.post('/api/email/send', async (req, res) => {
 // EVOLUTION API - WHATSAPP INTEGRATION ROUTES
 // ==========================================
 
+function cleanEvolutionUrl(rawUrl?: string): string {
+  if (!rawUrl) return '';
+  return String(rawUrl)
+    .trim()
+    .replace(/\/+(manager|dashboard|app|login)(\/.*)?$/i, '')
+    .replace(/\/+$/, '');
+}
+
+async function parseEvolutionHttpResponse(resp: Response): Promise<{ isHtml: boolean; data: any; rawText: string }> {
+  const rawText = await resp.text().catch(() => '');
+  const trimmed = rawText.trim();
+  if (
+    trimmed.toLowerCase().startsWith('<!doctype') ||
+    trimmed.toLowerCase().startsWith('<html') ||
+    trimmed.startsWith('<')
+  ) {
+    return { isHtml: true, data: null, rawText: trimmed };
+  }
+  try {
+    return { isHtml: false, data: trimmed ? JSON.parse(trimmed) : null, rawText: trimmed };
+  } catch {
+    return { isHtml: false, data: null, rawText: trimmed };
+  }
+}
+
 // 1. Check Evolution API Instance Status & Connection
 app.post('/api/whatsapp/status', async (req, res) => {
   try {
@@ -1276,7 +1301,7 @@ app.post('/api/whatsapp/status', async (req, res) => {
       });
     }
 
-    const baseUrl = evolutionApiUrl.replace(/\/+$/, '');
+    const baseUrl = cleanEvolutionUrl(evolutionApiUrl);
     const cleanInstance = encodeURIComponent(evolutionInstance.trim());
     const targetUrl = `${baseUrl}/instance/connectionState/${cleanInstance}`;
 
@@ -1292,13 +1317,21 @@ app.post('/api/whatsapp/status', async (req, res) => {
     });
     clearTimeout(timeoutId);
 
-    const data = await resp.json().catch(() => null);
+    const { isHtml, data } = await parseEvolutionHttpResponse(resp);
+
+    if (isHtml) {
+      return res.status(400).json({
+        success: false,
+        connected: false,
+        message: `A URL informada (${baseUrl}) retornou uma página HTML em vez da API. Verifique se a URL da Evolution API está correta (sem /manager no final).`
+      });
+    }
 
     if (!resp.ok) {
       return res.status(resp.status).json({
         success: false,
         connected: false,
-        message: `Evolution API retornou status HTTP ${resp.status}`,
+        message: data?.message || `Evolution API retornou status HTTP ${resp.status}`,
         details: data
       });
     }
@@ -1335,7 +1368,7 @@ app.post('/api/whatsapp/test', async (req, res) => {
       });
     }
 
-    const baseUrl = evolutionApiUrl.replace(/\/+$/, '');
+    const baseUrl = cleanEvolutionUrl(evolutionApiUrl);
     const cleanInstance = encodeURIComponent(evolutionInstance.trim());
 
     // 1. Check connection
@@ -1352,7 +1385,14 @@ app.post('/api/whatsapp/test', async (req, res) => {
     });
     clearTimeout(timeoutId);
 
-    const statusData = await statusResp.json().catch(() => null);
+    const { isHtml: statusIsHtml, data: statusData } = await parseEvolutionHttpResponse(statusResp);
+    if (statusIsHtml) {
+      return res.status(400).json({
+        success: false,
+        message: `A URL informada (${baseUrl}) retornou uma página HTML em vez da Evolution API. Verifique se a URL não contém /manager no final.`
+      });
+    }
+
     if (!statusResp.ok) {
       return res.status(statusResp.status).json({
         success: false,
@@ -1391,12 +1431,14 @@ app.post('/api/whatsapp/test', async (req, res) => {
         })
       });
 
-      const sendData = await sendResp.json().catch(() => null);
-      if (!sendResp.ok) {
-        return res.status(sendResp.status).json({
+      const { isHtml: sendIsHtml, data: sendData } = await parseEvolutionHttpResponse(sendResp);
+      if (sendIsHtml || !sendResp.ok) {
+        return res.status(sendResp.ok ? 400 : sendResp.status).json({
           success: false,
           connected: isConnected,
-          message: `Instância está no estado "${state}", porém o envio para ${rawPhone} retornou erro HTTP ${sendResp.status}.`,
+          message: sendIsHtml
+            ? `O endpoint de envio em ${baseUrl} retornou HTML inválido.`
+            : `Instância está no estado "${state}", porém o envio para ${rawPhone} retornou erro HTTP ${sendResp.status}.`,
           details: sendData
         });
       }
@@ -1453,14 +1495,16 @@ app.post('/api/whatsapp/send', async (req, res) => {
       rawPhone = `55${rawPhone}`;
     }
 
-    const baseUrl = evolutionApiUrl.replace(/\/+$/, '');
+    const baseUrl = cleanEvolutionUrl(evolutionApiUrl);
     const cleanInstance = encodeURIComponent(evolutionInstance.trim());
 
     let mediaResult = null;
+    let mediaSentOk = false;
     let textResult = null;
 
     // 1. If media (base64 PDF document) is provided, sendMedia
     if (media) {
+      const cleanBase64 = String(media).replace(/^data:[^;]+;base64,/, '').trim();
       const sendMediaUrl = `${baseUrl}/message/sendMedia/${cleanInstance}`;
       const mediaResp = await fetch(sendMediaUrl, {
         method: 'POST',
@@ -1473,25 +1517,28 @@ app.post('/api/whatsapp/send', async (req, res) => {
           mediatype: 'document',
           mimetype: 'application/pdf',
           caption: caption || text || '',
-          media: media,
+          media: cleanBase64,
           fileName: fileName || 'holerite.pdf',
           mediaMessage: {
             mediatype: 'document',
             caption: caption || text || '',
-            media: media,
+            media: cleanBase64,
             fileName: fileName || 'holerite.pdf'
           }
         })
       });
 
-      mediaResult = await mediaResp.json().catch(() => null);
-      if (!mediaResp.ok) {
-        console.warn('sendMedia returned non-ok:', mediaResp.status, mediaResult);
+      const parsedMedia = await parseEvolutionHttpResponse(mediaResp);
+      if (mediaResp.ok && !parsedMedia.isHtml) {
+        mediaResult = parsedMedia.data;
+        mediaSentOk = true;
+      } else {
+        console.warn('sendMedia returned non-ok:', mediaResp.status, parsedMedia.data);
       }
     }
 
-    // 2. If no media, or if text was requested alongside media without caption or as standalone
-    if (!media || (!caption && text && !mediaResult)) {
+    // 2. If no media (e.g. Lembrete de Assinatura) or if media failed, send text via sendText
+    if (!media || !mediaSentOk) {
       const sendTextUrl = `${baseUrl}/message/sendText/${cleanInstance}`;
       const textResp = await fetch(sendTextUrl, {
         method: 'POST',
@@ -1511,11 +1558,24 @@ app.post('/api/whatsapp/send', async (req, res) => {
         })
       });
 
-      textResult = await textResp.json().catch(() => null);
-      if (!textResp.ok && !mediaResult) {
+      const parsedText = await parseEvolutionHttpResponse(textResp);
+      if (parsedText.isHtml) {
+        return res.status(400).json({
+          success: false,
+          message: `A URL da Evolution API (${baseUrl}) retornou uma página HTML em vez de JSON. Verifique se a URL não contém /manager no final.`
+        });
+      }
+
+      textResult = parsedText.data;
+      if (!textResp.ok && !mediaSentOk) {
+        const evoErrMsg =
+          (typeof textResult?.message === 'string' && textResult.message) ||
+          (Array.isArray(textResult?.response?.message) && textResult.response.message.join(', ')) ||
+          (typeof textResult?.error === 'string' && textResult.error) ||
+          `Falha ao enviar mensagem via Evolution API (HTTP ${textResp.status})`;
         return res.status(textResp.status).json({
           success: false,
-          message: `Falha ao enviar mensagem via Evolution API (HTTP ${textResp.status})`,
+          message: evoErrMsg,
           details: textResult
         });
       }
@@ -1536,6 +1596,14 @@ app.post('/api/whatsapp/send', async (req, res) => {
   }
 });
 
+// Garantir que nenhuma rota /api/* inexistente retorne HTML (<!doctype html>)
+app.all('/api/*', (req, res) => {
+  res.status(404).json({
+    success: false,
+    message: `Rota de API não encontrada no servidor (${req.method} ${req.originalUrl}).`
+  });
+});
+
 // Setup Vite development middleware or production static files
 async function startServer() {
   // Determine port: AI Studio applet MUST listen on port 3000 (DEFAULT_APP_PORT)
@@ -1547,6 +1615,8 @@ async function startServer() {
     PORT = parseInt(process.env.DEFAULT_APP_PORT, 10);
   } else if (process.env.APP_PORT) {
     PORT = parseInt(process.env.APP_PORT, 10);
+  } else if (process.env.PORT) {
+    PORT = parseInt(process.env.PORT, 10);
   }
 
   if (process.env.NODE_ENV !== 'production') {
