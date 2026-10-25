@@ -2,10 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Employee, PayReceipt, SystemConfig } from '../types';
 import { formatBRL } from '../utils/pdfGenerator';
 import {
-  openWhatsAppDirect,
   createWhatsAppMessage,
   createSignatureReminderWhatsAppMessage,
-  openWhatsAppReminderDirect,
   createSignatureReminderEmailTemplate,
   createEmailTemplate
 } from '../utils/notifications';
@@ -516,7 +514,7 @@ export const BatchDispatchModal: React.FC<BatchDispatchModalProps> = ({
                     <div>
                       <h4 className="font-bold text-xs">Evolution API não configurada</h4>
                       <p className="text-[11px] text-amber-800 mt-0.5 leading-relaxed">
-                        Para habilitar o disparo 100% automático em lote de lembretes e holerites, configure sua <strong>Evolution API</strong> na aba <em>WhatsApp & Evolution API</em> das Configurações. No modo manual, você pode clicar nos botões individuais para abrir no WhatsApp Web.
+                        Para realizar disparos pelo WhatsApp, configure os parâmetros de conexão com a sua <strong>Evolution API</strong> na aba <em>WhatsApp & Evolution API</em> das Configurações do Gestor.
                       </p>
                     </div>
                   </div>
@@ -641,40 +639,32 @@ export const BatchDispatchModal: React.FC<BatchDispatchModalProps> = ({
                             {copiedIndex === idx ? 'Copiado!' : 'Copiar'}
                           </button>
 
-                          {/* Botão de envio via Evolution API se configurada */}
-                          {isEvolutionConfigured && (
+                          {/* Botão de envio exclusivo via Evolution API */}
+                          {isEvolutionConfigured ? (
                             <button
                               disabled={!emp.telefone || isProcessing || status === 'sending'}
                               onClick={() => handleSendSingleWhatsApp(emp, receipt)}
                               className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg text-[11px] font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
-                              title="Disparar automaticamente via Evolution API"
+                              title="Disparar via Evolution API"
                             >
                               <Send className="w-3.5 h-3.5" />
                               <span>{status === 'sent' ? 'Reenviar' : activeIsReminder ? 'Lembrete API' : 'Enviar API'}</span>
                             </button>
+                          ) : (
+                            onOpenSettings && (
+                              <button
+                                onClick={() => {
+                                  onClose();
+                                  onOpenSettings();
+                                }}
+                                className="px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-lg text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
+                                title="Configurar Evolution API"
+                              >
+                                <Settings className="w-3.5 h-3.5 text-amber-600" />
+                                <span>Configurar API</span>
+                              </button>
+                            )
                           )}
-
-                          {/* Fallback ou Envio Manual via WhatsApp Web */}
-                          <button
-                            onClick={() => {
-                              if (activeIsReminder) {
-                                openWhatsAppReminderDirect(emp, receipt);
-                              } else {
-                                openWhatsAppDirect(emp, receipt);
-                              }
-                            }}
-                            className={`px-3 py-1.5 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
-                              activeIsReminder
-                                ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-xs'
-                                : isEvolutionConfigured
-                                  ? 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                                  : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
-                            }`}
-                            title="Abrir no WhatsApp Web"
-                          >
-                            <Share2 className="w-3.5 h-3.5" />
-                            <span>{activeIsReminder ? 'Lembrete Web' : isEvolutionConfigured ? 'WhatsApp Web' : 'Enviar WhatsApp'}</span>
-                          </button>
                         </div>
                       </div>
                     );

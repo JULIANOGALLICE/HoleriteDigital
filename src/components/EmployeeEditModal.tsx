@@ -8,7 +8,6 @@ import {
   Mail,
   MapPin,
   Building,
-  CreditCard,
   Plus,
   Trash2,
   Users
@@ -50,12 +49,12 @@ function buildEmployeeFormData(emp: Employee | null): Employee {
       uf: emp?.endereco?.uf || 'MG',
       complemento: emp?.endereco?.complemento || ''
     },
-    dadosBancarios: {
-      banco: emp?.dadosBancarios?.banco || '',
-      agencia: emp?.dadosBancarios?.agencia || '',
-      conta: emp?.dadosBancarios?.conta || '',
-      tipoConta: emp?.dadosBancarios?.tipoConta || 'CORRENTE',
-      chavePix: emp?.dadosBancarios?.chavePix || ''
+    dadosBancarios: emp?.dadosBancarios || {
+      banco: '',
+      agencia: '',
+      conta: '',
+      tipoConta: 'CORRENTE',
+      chavePix: ''
     }
   };
 }
@@ -68,7 +67,7 @@ export const EmployeeEditModal: React.FC<EmployeeEditModalProps> = ({
 }) => {
   const [prevEmployee, setPrevEmployee] = useState<Employee | null>(employee);
   const [formData, setFormData] = useState<Employee>(() => buildEmployeeFormData(employee));
-  const [activeTab, setActiveTab] = useState<'DADOS' | 'CONTATOS' | 'ENDERECO' | 'BANCARIOS'>('DADOS');
+  const [activeTab, setActiveTab] = useState<'DADOS' | 'CONTATOS' | 'ENDERECO'>('DADOS');
 
   // Immediately synchronize during render if employee prop changed
   if (employee !== prevEmployee) {
@@ -172,15 +171,6 @@ export const EmployeeEditModal: React.FC<EmployeeEditModalProps> = ({
             }`}
           >
             <MapPin className="w-4 h-4" /> Endereço
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('BANCARIOS')}
-            className={`py-3 px-4 border-b-2 flex items-center gap-2 cursor-pointer transition-colors whitespace-nowrap ${
-              activeTab === 'BANCARIOS' ? 'border-blue-600 text-blue-600 bg-white' : 'border-transparent hover:text-slate-900'
-            }`}
-          >
-            <CreditCard className="w-4 h-4" /> Dados Bancários
           </button>
         </div>
 
@@ -535,98 +525,6 @@ export const EmployeeEditModal: React.FC<EmployeeEditModalProps> = ({
                       className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
                     />
                   </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Tab: Dados Bancários */}
-          {activeTab === 'BANCARIOS' && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-slate-700 font-semibold mb-1">Instituição Bancária</label>
-                  <input
-                    type="text"
-                    value={formData.dadosBancarios.banco}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        dadosBancarios: { ...formData.dadosBancarios, banco: e.target.value }
-                      })
-                    }
-                    placeholder="Ex: ITAÚ UNIBANCO S.A. (341)"
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-slate-700 font-semibold mb-1">Tipo de Conta</label>
-                  <select
-                    value={formData.dadosBancarios.tipoConta}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        dadosBancarios: {
-                          ...formData.dadosBancarios,
-                          tipoConta: e.target.value as any
-                        }
-                      })
-                    }
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  >
-                    <option value="CORRENTE">Conta Corrente</option>
-                    <option value="POUPANCA">Conta Poupança</option>
-                    <option value="SALARIO">Conta Salário</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-slate-700 font-semibold mb-1">Agência</label>
-                  <input
-                    type="text"
-                    value={formData.dadosBancarios.agencia}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        dadosBancarios: { ...formData.dadosBancarios, agencia: e.target.value }
-                      })
-                    }
-                    placeholder="0000"
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-slate-700 font-semibold mb-1">Número da Conta</label>
-                  <input
-                    type="text"
-                    value={formData.dadosBancarios.conta}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        dadosBancarios: { ...formData.dadosBancarios, conta: e.target.value }
-                      })
-                    }
-                    placeholder="00000-0"
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  />
-                </div>
-
-                <div className="sm:col-span-2">
-                  <label className="block text-slate-700 font-semibold mb-1">Chave PIX</label>
-                  <input
-                    type="text"
-                    value={formData.dadosBancarios.chavePix || ''}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        dadosBancarios: { ...formData.dadosBancarios, chavePix: e.target.value }
-                      })
-                    }
-                    placeholder="CPF, E-mail ou Celular"
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  />
                 </div>
               </div>
             </div>

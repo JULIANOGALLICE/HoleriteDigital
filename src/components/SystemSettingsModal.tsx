@@ -1569,70 +1569,28 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
           {/* TAB 4: WhatsApp & Evolution API */}
           {activeTab === 'COMUNICACAO' && (
             <div className="space-y-5">
-              {/* Escolha do Provedor de WhatsApp */}
-              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
-                <div className="flex items-center gap-2">
-                  <Smartphone className="w-4 h-4 text-emerald-600" />
-                  <h4 className="font-bold text-slate-900 text-xs">Método de Envio do WhatsApp</h4>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <label
-                    className={`border rounded-xl p-3 flex items-start gap-3 cursor-pointer transition-all ${
-                      formData.whatsappProvider === 'EVOLUTION_API'
-                        ? 'border-emerald-500 bg-emerald-50/60 ring-2 ring-emerald-500/20'
-                        : 'border-slate-200 bg-white hover:bg-slate-50'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="whatsappProvider"
-                      value="EVOLUTION_API"
-                      checked={formData.whatsappProvider === 'EVOLUTION_API'}
-                      onChange={() => setFormData({ ...formData, whatsappProvider: 'EVOLUTION_API' })}
-                      className="mt-0.5 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
-                    />
-                    <div className="text-xs">
-                      <div className="flex items-center gap-1.5 font-bold text-slate-900">
-                        <span>Evolution API</span>
-                        <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded-md">
-                          Recomendado
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
-                        Disparo automático em massa, envio de PDF do holerite anexado e entrega de códigos 2FA diretamente no WhatsApp do colaborador.
-                      </p>
+              {/* Provedor Oficial de WhatsApp: Evolution API */}
+              <div className="bg-emerald-50/60 border border-emerald-200 rounded-2xl p-4 flex items-center justify-between gap-3 shadow-xs">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-xl bg-emerald-600 text-white shrink-0 shadow-xs">
+                    <Radio className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="font-bold text-slate-900 text-xs">Canal Oficial de WhatsApp: Evolution API</h4>
+                      <span className="text-[10px] bg-emerald-100 text-emerald-800 font-extrabold px-2 py-0.5 rounded-full border border-emerald-300">
+                        Envio Exclusivo via API
+                      </span>
                     </div>
-                  </label>
-
-                  <label
-                    className={`border rounded-xl p-3 flex items-start gap-3 cursor-pointer transition-all ${
-                      formData.whatsappProvider === 'WHATSAPP_WEB_DIRECT'
-                        ? 'border-blue-500 bg-blue-50/60 ring-2 ring-blue-500/20'
-                        : 'border-slate-200 bg-white hover:bg-slate-50'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="whatsappProvider"
-                      value="WHATSAPP_WEB_DIRECT"
-                      checked={formData.whatsappProvider === 'WHATSAPP_WEB_DIRECT'}
-                      onChange={() => setFormData({ ...formData, whatsappProvider: 'WHATSAPP_WEB_DIRECT' })}
-                      className="mt-0.5 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                    />
-                    <div className="text-xs">
-                      <div className="font-bold text-slate-900">WhatsApp Web Direto</div>
-                      <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
-                        Abre individualmente a conversa no WhatsApp Web ou app oficial com a mensagem pré-preenchida, sem necessitar de servidor Evolution API.
-                      </p>
-                    </div>
-                  </label>
+                    <p className="text-[11px] text-slate-600 mt-0.5">
+                      Todos os disparos em massa, notificações de holerites e validações 2FA são processados de forma 100% automatizada e silenciosa pelo servidor da Evolution API.
+                    </p>
+                  </div>
                 </div>
               </div>
 
               {/* Configurações da Evolution API */}
-              {formData.whatsappProvider === 'EVOLUTION_API' && (
-                <div className="border border-emerald-200 bg-emerald-50/30 rounded-2xl p-5 space-y-4">
+              <div className="border border-emerald-200 bg-emerald-50/30 rounded-2xl p-5 space-y-4">
                   <div className="flex items-center justify-between border-b border-emerald-100 pb-3">
                     <div className="flex items-center gap-2">
                       <Radio className="w-4 h-4 text-emerald-600" />
@@ -1826,7 +1784,6 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
                     )}
                   </div>
                 </div>
-              )}
 
               {/* Modelo da Mensagem de Texto */}
               <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-3">

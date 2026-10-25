@@ -1,14 +1,12 @@
 import React, { useState } from 'react';
 import { Employee, PayReceipt, DigitalCertificateA1 } from '../types';
 import { formatBRL, downloadPayReceiptPDF } from '../utils/pdfGenerator';
-import { openWhatsAppDirect } from '../utils/notifications';
 import { getDefaultA1Certificate, getActiveA1Certificate } from '../utils/certificateA1';
 import {
   Download,
   Printer,
   CheckCircle,
   FileText,
-  Share2,
   ShieldCheck,
   Mail,
   Award,
@@ -142,24 +140,39 @@ export const ReceiptViewer: React.FC<ReceiptViewerProps> = ({
 
           {/* Items Rows */}
           <div className="divide-y divide-slate-100 min-h-[160px] bg-white">
-            {receipt.itens.map((item, idx) => (
-              <div
-                key={idx}
-                className={`grid grid-cols-12 py-1.5 px-3 hover:bg-slate-50 transition-colors ${
-                  idx % 2 === 1 ? 'bg-slate-50/40' : ''
-                }`}
-              >
-                <div className="col-span-1 text-slate-600 font-mono">{item.codigo}</div>
-                <div className="col-span-6 font-medium text-slate-900">{item.descricao}</div>
-                <div className="col-span-1 text-center text-slate-600">{item.referencia || ''}</div>
-                <div className="col-span-2 text-right font-mono text-emerald-800 font-semibold">
-                  {item.vencimento ? formatBRL(item.vencimento) : ''}
-                </div>
-                <div className="col-span-2 text-right font-mono text-rose-800 font-semibold">
-                  {item.desconto ? formatBRL(item.desconto) : ''}
-                </div>
-              </div>
-            ))}
+            {(() => {
+              const seenKeys = new Set<string>();
+              const displayItens = (receipt.itens || []).filter(item => {
+                const key = `${item.codigo || ''}|${(item.descricao || '').trim().toUpperCase()}`;
+                if (seenKeys.has(key)) return false;
+                seenKeys.add(key);
+                return true;
+              });
+
+              return displayItens.map((item, idx) => {
+                const rawVenc = item.vencimento ?? (item as any).vencimentos ?? ((item as any).tipo === 'PROVENTO' || (item as any).tipo === 'VENCIMENTO' ? (item as any).valor : null);
+                const rawDesc = item.desconto ?? (item as any).descontos ?? (item as any).valorDesconto ?? ((item as any).tipo === 'DESCONTO' ? (item as any).valor : null);
+
+                return (
+                  <div
+                    key={idx}
+                    className={`grid grid-cols-12 py-1.5 px-3 hover:bg-slate-50 transition-colors ${
+                      idx % 2 === 1 ? 'bg-slate-50/40' : ''
+                    }`}
+                  >
+                    <div className="col-span-1 text-slate-600 font-mono">{item.codigo}</div>
+                    <div className="col-span-6 font-medium text-slate-900">{item.descricao}</div>
+                    <div className="col-span-1 text-center text-slate-600">{item.referencia || ''}</div>
+                    <div className="col-span-2 text-right font-mono text-emerald-800 font-semibold">
+                      {rawVenc && Number(rawVenc) > 0 ? formatBRL(rawVenc) : ''}
+                    </div>
+                    <div className="col-span-2 text-right font-mono text-rose-800 font-semibold">
+                      {rawDesc && Number(rawDesc) > 0 ? formatBRL(rawDesc) : ''}
+                    </div>
+                  </div>
+                );
+              });
+            })()}
           </div>
 
           {/* Totals & Net Pay Box */}
@@ -465,17 +478,7 @@ export const ReceiptViewer: React.FC<ReceiptViewerProps> = ({
             Imprimir
           </button>
 
-          {/* WhatsApp Direct (Apenas Gestão RH) */}
-          {isAdmin && (
-            <button
-              onClick={() => openWhatsAppDirect(employee, receipt)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-green-50 hover:bg-green-100 text-green-700 border border-green-200 font-medium text-xs transition-colors cursor-pointer"
-              title="Enviar comprovante via WhatsApp"
-            >
-              <Share2 className="w-4 h-4" />
-              WhatsApp
-            </button>
-          )}
+
 
           {/* Email dispatch (Apenas Gestão RH) */}
           {isAdmin && onOpenEmailModal && (

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Employee, UserAccount, EmergencyContact, Address, BankAccount } from '../types';
+import { Employee, UserAccount, EmergencyContact, Address } from '../types';
+import logoHolerite from '../Images/LogoHolerite.png';
 import {
   ShieldCheck,
   Lock,
@@ -10,7 +11,6 @@ import {
   Users,
   MapPin,
   Building,
-  CreditCard,
   AlertCircle,
   CheckCircle2,
   Eye,
@@ -63,15 +63,6 @@ export const MandatoryRegistrationModal: React.FC<MandatoryRegistrationModalProp
     uf: employee.endereco?.uf || 'MG'
   });
   const [isSearchingCep, setIsSearchingCep] = useState(false);
-
-  // Bank Account
-  const [dadosBancarios, setDadosBancarios] = useState<BankAccount>({
-    banco: employee.dadosBancarios?.banco || 'Banco do Brasil',
-    agencia: employee.dadosBancarios?.agencia || '',
-    conta: employee.dadosBancarios?.conta || '',
-    tipoConta: employee.dadosBancarios?.tipoConta || 'CORRENTE',
-    chavePix: employee.dadosBancarios?.chavePix || ''
-  });
 
   // Emergency Contacts (At least 1 required!)
   const initialContacts: EmergencyContact[] =
@@ -211,13 +202,7 @@ export const MandatoryRegistrationModal: React.FC<MandatoryRegistrationModalProp
           uf: endereco.uf.trim().toUpperCase()
         },
         contatosFamiliares: validEmergencyContacts,
-        dadosBancarios: {
-          ...dadosBancarios,
-          banco: dadosBancarios.banco.trim(),
-          agencia: dadosBancarios.agencia.trim(),
-          conta: dadosBancarios.conta.trim(),
-          chavePix: dadosBancarios.chavePix?.trim()
-        },
+        dadosBancarios: employee.dadosBancarios,
         cadastroCompleto: true
       };
 
@@ -249,8 +234,8 @@ export const MandatoryRegistrationModal: React.FC<MandatoryRegistrationModalProp
         {/* Header */}
         <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 text-white p-5 sm:p-6 border-b border-slate-800 flex items-start justify-between gap-4">
           <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-2xl bg-blue-600/30 border border-blue-400/40 flex items-center justify-center text-blue-300 shrink-0 shadow-inner">
-              <ShieldCheck className="w-6 h-6 text-blue-400" />
+            <div className="w-12 h-12 rounded-2xl bg-white p-1 border border-white/20 flex items-center justify-center shrink-0 shadow-md">
+              <img src={logoHolerite} alt="Holerite" className="w-full h-full object-contain" />
             </div>
             <div>
               <div className="flex items-center gap-2 flex-wrap">
@@ -319,16 +304,6 @@ export const MandatoryRegistrationModal: React.FC<MandatoryRegistrationModalProp
             3. Endereço Completo
           </span>
 
-          <span
-            className={`px-2.5 py-1 rounded-lg font-semibold flex items-center gap-1 ${
-              !dadosBancarios.conta
-                ? 'bg-slate-200 text-slate-700'
-                : 'bg-emerald-100 text-emerald-900 border border-emerald-300'
-            }`}
-          >
-            <CreditCard className="w-3 h-3" />
-            4. Dados Bancários
-          </span>
         </div>
 
         {/* Form Body */}
@@ -672,90 +647,6 @@ export const MandatoryRegistrationModal: React.FC<MandatoryRegistrationModalProp
                   placeholder="MG"
                   className="w-full px-3 py-2 border border-slate-300 rounded-xl font-medium text-center focus:ring-2 focus:ring-blue-500 focus:outline-none"
                   required
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* 5. SEÇÃO: Dados Bancários para Pagamento do Salário */}
-          <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 space-y-3.5 shadow-xs">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center font-bold text-sm shadow-xs">
-                <CreditCard className="w-4 h-4" />
-              </div>
-              <div>
-                <h3 className="font-extrabold text-sm text-slate-900">
-                  5. Dados Bancários para Pagamento do Salário
-                </h3>
-                <p className="text-[11px] text-slate-500">
-                  Conta bancária de sua titularidade onde seu salário líquido será creditado.
-                </p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-              <div className="space-y-1 sm:col-span-2">
-                <label className="font-bold text-slate-700">Instituição Bancária *</label>
-                <input
-                  type="text"
-                  value={dadosBancarios.banco}
-                  onChange={e => setDadosBancarios({ ...dadosBancarios, banco: e.target.value })}
-                  placeholder="Ex: Banco do Brasil, Bradesco, Itaú, Nubank, Caixa..."
-                  className="w-full px-3 py-2 border border-slate-300 rounded-xl font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  required
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="font-bold text-slate-700">Agência *</label>
-                <input
-                  type="text"
-                  value={dadosBancarios.agencia}
-                  onChange={e => setDadosBancarios({ ...dadosBancarios, agencia: e.target.value })}
-                  placeholder="Ex: 0001"
-                  className="w-full px-3 py-2 border border-slate-300 rounded-xl font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  required
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="font-bold text-slate-700">Conta com Dígito *</label>
-                <input
-                  type="text"
-                  value={dadosBancarios.conta}
-                  onChange={e => setDadosBancarios({ ...dadosBancarios, conta: e.target.value })}
-                  placeholder="Ex: 12345-6"
-                  className="w-full px-3 py-2 border border-slate-300 rounded-xl font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  required
-                />
-              </div>
-
-              <div className="space-y-1 sm:col-span-2">
-                <label className="font-bold text-slate-700">Tipo de Conta</label>
-                <select
-                  value={dadosBancarios.tipoConta}
-                  onChange={e =>
-                    setDadosBancarios({
-                      ...dadosBancarios,
-                      tipoConta: e.target.value as 'CORRENTE' | 'POUPANCA' | 'SALARIO'
-                    })
-                  }
-                  className="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                >
-                  <option value="CORRENTE">Conta Corrente</option>
-                  <option value="SALARIO">Conta Salário</option>
-                  <option value="POUPANCA">Conta Poupança</option>
-                </select>
-              </div>
-
-              <div className="space-y-1 sm:col-span-2">
-                <label className="font-bold text-slate-700">Chave PIX (Opcional)</label>
-                <input
-                  type="text"
-                  value={dadosBancarios.chavePix || ''}
-                  onChange={e => setDadosBancarios({ ...dadosBancarios, chavePix: e.target.value })}
-                  placeholder="CPF, celular, e-mail ou chave aleatória"
-                  className="w-full px-3 py-2 border border-slate-300 rounded-xl font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
                 />
               </div>
             </div>

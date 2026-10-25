@@ -82,15 +82,13 @@ export const DigitalSignatureModal: React.FC<DigitalSignatureModalProps> = ({
 
       setGeneratedCodePreview(code);
 
-      // Channel 1: WhatsApp (Evolution API or direct link)
+      // Channel 1: WhatsApp (Exclusivo via Evolution API)
       if (selectedChannel === 'WHATSAPP') {
         const rawPhone = employee.telefone.replace(/\D/g, '');
         const fullPhone = rawPhone.startsWith('55') ? rawPhone : `55${rawPhone}`;
         const msg = `🔐 *CÓDIGO DE ASSINATURA DIGITAL - HOLERITEDIGITAL*\nOlá, *${employee.nome.split(' ')[0]}*!\n\nSeu código de autenticação para assinar o holerite de *${receipt.mesAno}* é:\n👉 *${code}*\n\nInsira este código na tela para concluir sua assinatura com validade jurídica CLT.`;
-        const waUrl = `https://wa.me/${fullPhone}?text=${encodeURIComponent(msg)}`;
 
         const isEvolutionConfigured =
-          systemConfig.whatsappProvider === 'EVOLUTION_API' &&
           Boolean(systemConfig.evolutionApiUrl && systemConfig.evolutionApiKey && systemConfig.evolutionInstance);
 
         if (isEvolutionConfigured) {
@@ -107,17 +105,22 @@ export const DigitalSignatureModal: React.FC<DigitalSignatureModalProps> = ({
                 message: `Código 2FA enviado com sucesso para ${employee.telefone} via Evolution API.`
               });
             } else {
-              window.open(waUrl, '_blank');
               setEmailDeliveryNotice({
                 success: false,
-                message: `Evolution API indisponível (${evoResult.message}). Abrimos o WhatsApp Web para envio manual.`
+                message: `Falha no envio via Evolution API: ${evoResult.message}. Verifique a conexão nas Configurações.`
               });
             }
           } catch (e: any) {
-            window.open(waUrl, '_blank');
+            setEmailDeliveryNotice({
+              success: false,
+              message: `Erro na comunicação com a Evolution API: ${e?.message || 'Falha de conexão'}.`
+            });
           }
         } else {
-          window.open(waUrl, '_blank');
+          setEmailDeliveryNotice({
+            success: false,
+            message: 'Evolution API não configurada. Configure a URL, Chave de API e Instância nas Configurações do Sistema para envio de código via WhatsApp.'
+          });
         }
       }
 

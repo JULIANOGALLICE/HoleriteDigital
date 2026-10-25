@@ -142,9 +142,6 @@ export const MedicalCertificateUploadModal: React.FC<MedicalCertificateUploadMod
     new Date().toISOString().split('T')[0]
   );
   const [diasAfastamento, setDiasAfastamento] = useState<number>(1);
-  const [cid, setCid] = useState('');
-  const [nomeMedico, setNomeMedico] = useState('');
-  const [crmMedico, setCrmMedico] = useState('');
   const [motivoObservacao, setMotivoObservacao] = useState('');
 
   // File Upload State
@@ -324,9 +321,6 @@ export const MedicalCertificateUploadModal: React.FC<MedicalCertificateUploadMod
         arquivoTamanhoBytes: arquivoTamanhoBytes || 0,
         status: 'PENDENTE',
         criadoEm: new Date().toISOString(),
-        ...(cid.trim() ? { cid: cid.trim().toUpperCase() } : {}),
-        ...(nomeMedico.trim() ? { nomeMedico: nomeMedico.trim() } : {}),
-        ...(crmMedico.trim() ? { crmMedico: crmMedico.trim() } : {}),
         ...(motivoObservacao.trim() ? { motivoObservacao: motivoObservacao.trim() } : {})
       };
 
@@ -594,51 +588,6 @@ export const MedicalCertificateUploadModal: React.FC<MedicalCertificateUploadMod
                 onChange={(e) => setDiasAfastamento(parseInt(e.target.value) || 1)}
                 className="w-full text-xs font-medium border border-slate-300 rounded-xl p-2.5 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-600 focus:border-blue-600 outline-none transition-all"
                 placeholder="Ex: 1, 2, 5"
-              />
-            </div>
-
-            {/* Médico Emitente */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5 uppercase tracking-wide">
-                Médico / Dentista Emitente
-              </label>
-              <input
-                type="text"
-                value={nomeMedico}
-                onChange={(e) => setNomeMedico(e.target.value)}
-                placeholder="Dr(a). Nome do Profissional"
-                className="w-full text-xs font-medium border border-slate-300 rounded-xl p-2.5 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-600 focus:border-blue-600 outline-none transition-all"
-              />
-            </div>
-
-            {/* CRM / CRO */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5 uppercase tracking-wide">
-                CRM / CRO e UF
-              </label>
-              <input
-                type="text"
-                value={crmMedico}
-                onChange={(e) => setCrmMedico(e.target.value)}
-                placeholder="Ex: CRM/SP 123456"
-                className="w-full text-xs font-medium border border-slate-300 rounded-xl p-2.5 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-600 focus:border-blue-600 outline-none transition-all"
-              />
-            </div>
-
-            {/* CID-10 (Facultativo) */}
-            <div className="sm:col-span-2">
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5 uppercase tracking-wide flex items-center justify-between">
-                <span>Código CID-10 (Facultativo)</span>
-                <span className="text-[10px] text-slate-500 font-normal">
-                  Res. CFM nº 1.658/2002 (sigilo médico garantido)
-                </span>
-              </label>
-              <input
-                type="text"
-                value={cid}
-                onChange={(e) => setCid(e.target.value)}
-                placeholder="Ex: J06.9, M54.5, Z76.3 (opcional)"
-                className="w-full text-xs font-medium border border-slate-300 rounded-xl p-2.5 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-600 focus:border-blue-600 outline-none transition-all"
               />
             </div>
 

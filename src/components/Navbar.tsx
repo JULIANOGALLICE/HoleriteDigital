@@ -1,14 +1,13 @@
 import React from 'react';
 import { Employee, UserAccount } from '../types';
+import logoHolerite from '../Images/LogoHolerite.png';
 import {
-  FileText,
   User,
   Shield,
   Sparkles,
   LogOut,
   Mail,
-  KeyRound,
-  ShieldCheck
+  KeyRound
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -46,18 +45,17 @@ export const Navbar: React.FC<NavbarProps> = ({
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-xs print:hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
         {/* Brand */}
-        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-md shrink-0">
-            <FileText className="w-4 h-4 sm:w-5 sm:h-5 text-blue-400" />
-          </div>
+        <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
+          <img
+            src={logoHolerite}
+            alt="Holerite - Portal do Colaborador"
+            className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl object-contain shadow-xs border border-slate-200/90 bg-white p-0.5 shrink-0"
+          />
           <div>
             <div className="flex items-center gap-1.5 sm:gap-2">
               <h1 className="font-extrabold text-sm sm:text-base tracking-tight text-slate-900">
                 Holerite<span className="text-blue-600">Digital</span>
               </h1>
-              <span className="hidden sm:flex text-[10px] bg-slate-100 text-slate-700 font-semibold px-2 py-0.5 rounded-full border border-slate-200 items-center gap-1">
-                <ShieldCheck className="w-3 h-3 text-blue-600" /> ICP-Brasil
-              </span>
             </div>
             <p className="hidden md:block text-[11px] text-slate-500 font-medium">
               Cartório Francisco José Barbosa Nobre

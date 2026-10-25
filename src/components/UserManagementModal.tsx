@@ -931,7 +931,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                       className="mt-0.5 rounded text-blue-600 focus:ring-blue-500"
                     />
                     <span>
-                      <strong>Exigir conclusão cadastral antes do holerite:</strong> O funcionário só poderá visualizar seu holerite após preencher endereço, dados bancários e pelo menos um telefone de emergência.
+                      <strong>Exigir conclusão cadastral antes do holerite:</strong> O funcionário só poderá visualizar seu holerite após preencher endereço residencial e pelo menos um telefone de emergência.
                     </span>
                   </label>
 
@@ -1135,7 +1135,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                       className="mt-0.5 rounded text-blue-600 focus:ring-blue-500"
                     />
                     <span>
-                      <strong>Exigir conclusão cadastral antes do holerite:</strong> O funcionário só poderá visualizar seu holerite após preencher endereço, dados bancários e pelo menos um telefone de emergência.
+                      <strong>Exigir conclusão cadastral antes do holerite:</strong> O funcionário só poderá visualizar seu holerite após preencher endereço residencial e pelo menos um telefone de emergência.
                     </span>
                   </label>
 

@@ -460,10 +460,8 @@ export async function sendEvolutionWhatsAppMessage(params: {
 }
 
 /**
- * Função inteligente de despacho de WhatsApp:
- * Se o provedor for EVOLUTION_API e as credenciais estiverem configuradas,
- * envia de forma automática e silenciosa via API.
- * Se falhar ou se for WHATSAPP_WEB_DIRECT, retorna a URL de fallback ou abre o WhatsApp Web.
+ * Despacho exclusivo via Evolution API (sem WhatsApp Web):
+ * Envia mensagem e/ou PDF do holerite diretamente pelo servidor da API configurada.
  */
 export async function dispatchWhatsAppSmart(
   config: SystemConfig,
@@ -472,20 +470,29 @@ export async function dispatchWhatsAppSmart(
   options?: {
     customText?: string;
     pdfBase64?: string;
-    openFallbackWindow?: boolean;
   }
 ): Promise<{
   success: boolean;
-  methodUsed: 'EVOLUTION_API' | 'WHATSAPP_WEB_DIRECT';
+  methodUsed: 'EVOLUTION_API';
   message: string;
-  fallbackUrl?: string;
 }> {
   const phone = formatWhatsAppPhone(employee.telefone);
   if (!phone) {
     return {
       success: false,
-      methodUsed: 'WHATSAPP_WEB_DIRECT',
+      methodUsed: 'EVOLUTION_API',
       message: `Colaborador ${employee.nome} não possui telefone / WhatsApp cadastrado.`
+    };
+  }
+
+  const isEvolutionConfigured =
+    Boolean(config.evolutionApiUrl && config.evolutionApiKey && config.evolutionInstance);
+
+  if (!isEvolutionConfigured) {
+    return {
+      success: false,
+      methodUsed: 'EVOLUTION_API',
+      message: 'Evolution API não configurada. Acesse as Configurações do Gestor (aba WhatsApp & Evolution API) para preencher a URL, Chave de API e Instância.'
     };
   }
 
@@ -496,69 +503,40 @@ export async function dispatchWhatsAppSmart(
       : createWhatsAppMessage(employee, receipt)
   );
 
-  const fallbackUrl = `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
+  try {
+    const media = config.enviarPdfAutomaticoWhatsapp && options?.pdfBase64
+      ? options.pdfBase64
+      : undefined;
 
-  const isEvolutionConfigured =
-    config.whatsappProvider === 'EVOLUTION_API' &&
-    Boolean(config.evolutionApiUrl && config.evolutionApiKey && config.evolutionInstance);
+    const fileName = `Holerite-${receipt.mesAno.replace(/[^a-zA-Z0-9]/g, '-')}-${employee.nome.split(' ')[0]}.pdf`;
 
-  if (isEvolutionConfigured) {
-    try {
-      const media = config.enviarPdfAutomaticoWhatsapp && options?.pdfBase64
-        ? options.pdfBase64
-        : undefined;
+    const result = await sendEvolutionWhatsAppMessage({
+      config,
+      number: phone,
+      text,
+      media,
+      fileName,
+      caption: `📄 Holerite de Pagamento - ${receipt.mesAno} - ${employee.nome}`
+    });
 
-      const fileName = `Holerite-${receipt.mesAno.replace(/[^a-zA-Z0-9]/g, '-')}-${employee.nome.split(' ')[0]}.pdf`;
-
-      const result = await sendEvolutionWhatsAppMessage({
-        config,
-        number: phone,
-        text,
-        media,
-        fileName,
-        caption: `📄 Holerite de Pagamento - ${receipt.mesAno} - ${employee.nome}`
-      });
-
-      if (result.success) {
-        return {
-          success: true,
-          methodUsed: 'EVOLUTION_API',
-          message: `Mensagem enviada com sucesso para ${employee.nome} via Evolution API!`
-        };
-      } else {
-        console.warn('Evolution API falhou, usando fallback WhatsApp Web:', result.message);
-        if (options?.openFallbackWindow !== false) {
-          window.open(fallbackUrl, '_blank');
-        }
-        return {
-          success: false,
-          methodUsed: 'WHATSAPP_WEB_DIRECT',
-          message: `Evolution API indisponível (${result.message}). Link do WhatsApp Web aberto.`,
-          fallbackUrl
-        };
-      }
-    } catch (e: any) {
-      if (options?.openFallbackWindow !== false) {
-        window.open(fallbackUrl, '_blank');
-      }
+    if (result.success) {
+      return {
+        success: true,
+        methodUsed: 'EVOLUTION_API',
+        message: `Mensagem enviada com sucesso para ${employee.nome} via Evolution API!`
+      };
+    } else {
       return {
         success: false,
-        methodUsed: 'WHATSAPP_WEB_DIRECT',
-        message: `Erro na Evolution API. Abrindo WhatsApp Web.`,
-        fallbackUrl
+        methodUsed: 'EVOLUTION_API',
+        message: `Falha no envio pela Evolution API: ${result.message}`
       };
     }
+  } catch (e: any) {
+    return {
+      success: false,
+      methodUsed: 'EVOLUTION_API',
+      message: `Erro na comunicação com a Evolution API: ${e?.message || 'Falha de conexão'}`
+    };
   }
-
-  // Provedor padrão: WhatsApp Web
-  if (options?.openFallbackWindow !== false) {
-    window.open(fallbackUrl, '_blank');
-  }
-
-  return {
-    success: true,
-    methodUsed: 'WHATSAPP_WEB_DIRECT',
-    message: `Janela do WhatsApp Web aberta para ${employee.nome}.`,
-    fallbackUrl
-  };
 }

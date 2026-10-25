@@ -42,7 +42,7 @@ export interface Employee {
   telefone: string;
   endereco: Address;
   contatosFamiliares: EmergencyContact[];
-  dadosBancarios: BankAccount;
+  dadosBancarios?: BankAccount;
   dataNascimento?: string;
   observacoes?: string;
   status: 'ATIVO' | 'AFASTADO' | 'FERIAS' | 'DESLIGADO';
@@ -151,7 +151,7 @@ export interface SystemConfig {
   diasPrazoAssinatura: number;
   certificadoA1?: DigitalCertificateA1;
   exigirCompletarCadastroPrimeiroAcesso: boolean;
-  whatsappProvider?: 'EVOLUTION_API' | 'WHATSAPP_WEB_DIRECT';
+  whatsappProvider?: 'EVOLUTION_API';
   evolutionApiUrl?: string;
   evolutionApiKey?: string;
   evolutionInstance?: string;

@@ -341,11 +341,15 @@ export const IncomeReportsAdminModal: React.FC<IncomeReportsAdminModalProps> = (
     const phone = formatWhatsAppPhone(rawPhone);
     const messageText = `Olá, *${report.beneficiario.nomeCompleto}*! 👋\n\nSeu *Comprovante de Rendimentos Pagos e IRRF* (Ano-Calendário ${report.anoCalendario} / Exercício ${report.exercicio}) do Cartório *FRANCISCO JOSE BARBOSA NOBRE* já está disponível para consulta e download no seu Portal do Colaborador.\n\nAcesse seu portal para visualizar e emitir o documento oficial para a Declaração de Imposto de Renda (IRPF).`;
 
-    const isEvolutionConfigured =
-      systemConfig?.whatsappProvider === 'EVOLUTION_API' &&
-      Boolean(systemConfig.evolutionApiUrl && systemConfig.evolutionApiKey && systemConfig.evolutionInstance);
+    if (!phone) {
+      showFeedback(`Colaborador ${report.beneficiario.nomeCompleto} não possui telefone / WhatsApp válido cadastrado.`, 'error');
+      return;
+    }
 
-    if (isEvolutionConfigured && phone && systemConfig) {
+    const isEvolutionConfigured =
+      Boolean(systemConfig?.evolutionApiUrl && systemConfig?.evolutionApiKey && systemConfig?.evolutionInstance);
+
+    if (isEvolutionConfigured && systemConfig) {
       try {
         const res = await sendEvolutionWhatsAppMessage({
           config: systemConfig,
@@ -354,17 +358,14 @@ export const IncomeReportsAdminModal: React.FC<IncomeReportsAdminModalProps> = (
         });
         if (res.success) {
           showFeedback(`Notificação enviada com sucesso para ${report.beneficiario.nomeCompleto} via Evolution API!`, 'success');
-          return;
+        } else {
+          showFeedback(`Falha no envio via Evolution API: ${res.message || 'Erro desconhecido'}.`, 'error');
         }
-      } catch (e) {}
-    }
-
-    // Fallback manual: WhatsApp Web
-    const message = encodeURIComponent(messageText);
-    if (phone) {
-      window.open(`https://api.whatsapp.com/send?phone=${phone}&text=${message}`, '_blank');
+      } catch (e: any) {
+        showFeedback(`Erro ao conectar com Evolution API: ${e?.message || 'Falha de conexão'}.`, 'error');
+      }
     } else {
-      window.open(`https://api.whatsapp.com/send?text=${message}`, '_blank');
+      showFeedback('Para envio via WhatsApp, configure a Evolution API nas Configurações do Sistema.', 'error');
     }
   };
 

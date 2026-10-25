@@ -25,14 +25,6 @@ Por favor, acesse o portal para conferir e assinar o seu comprovante em PDF. Em 
   return msg;
 }
 
-export function openWhatsAppDirect(employee: Employee, receipt: PayReceipt): void {
-  const rawPhone = (employee.telefone || '').replace(/\D/g, '');
-  const fullPhone = rawPhone.startsWith('55') ? rawPhone : `55${rawPhone}`;
-  const text = createWhatsAppMessage(employee, receipt);
-  const waUrl = `https://wa.me/${fullPhone}?text=${encodeURIComponent(text)}`;
-  window.open(waUrl, '_blank');
-}
-
 export function createSignatureReminderWhatsAppMessage(employee: Employee, receipt: PayReceipt): string {
   const primeiroNome = employee.nome.split(' ')[0];
   const urlApp = typeof window !== 'undefined' ? window.location.origin : '';
@@ -50,14 +42,6 @@ De acordo com o Art. 464 da CLT e as normas internas, o *download do comprovante
 ${urlApp}
 
 Por favor, acesse o portal o quanto antes para validar seu documento. Em caso de dúvidas, procure o Departamento Pessoal.`;
-}
-
-export function openWhatsAppReminderDirect(employee: Employee, receipt: PayReceipt): void {
-  const rawPhone = (employee.telefone || '').replace(/\D/g, '');
-  const fullPhone = rawPhone.startsWith('55') ? rawPhone : `55${rawPhone}`;
-  const text = createSignatureReminderWhatsAppMessage(employee, receipt);
-  const waUrl = `https://wa.me/${fullPhone}?text=${encodeURIComponent(text)}`;
-  window.open(waUrl, '_blank');
 }
 
 export function createEmailTemplate(employee: Employee, receipt: PayReceipt) {

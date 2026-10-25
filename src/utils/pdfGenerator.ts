@@ -4,9 +4,23 @@ import { Employee, PayReceipt, DigitalCertificateA1 } from '../types';
 import { getActiveA1Certificate } from './certificateA1';
 import { embedPadesSignature, signPdfDocument } from './pdfSignerA1';
 
-export function formatBRL(val: number | null | undefined): string {
-  if (val === null || val === undefined) return '';
-  return val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+export function formatBRL(val: number | string | null | undefined): string {
+  if (val === null || val === undefined || val === '') return '';
+  let num: number;
+  if (typeof val === 'number') {
+    num = val;
+  } else {
+    const clean = String(val).trim();
+    if (!clean) return '';
+    if (clean === '0' || clean === '0,00' || clean === '0.00') return '0,00';
+    if (clean.includes(',')) {
+      num = parseFloat(clean.replace(/\./g, '').replace(',', '.'));
+    } else {
+      num = parseFloat(clean);
+    }
+  }
+  if (isNaN(num)) return '';
+  return num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 /**
@@ -237,33 +251,58 @@ export function generatePayReceiptPDF(
   doc.text('VENCIMENTOS (R$)', colXVenc + colWVenc - 2.5, tblTopY + 4.5, { align: 'right' });
   doc.text('DESCONTOS (R$)', colXDescVal + colWDescVal - 2.5, tblTopY + 4.5, { align: 'right' });
 
-  // Render Table Row Items
-  let itemY = tblBodyStartY + 4.5;
-  const items = receipt.itens.slice(0, 16);
-  items.forEach((item, index) => {
-    // Alternating subtle background or line
+  // Deduplicate items (e.g. if extracted from dual employer/employee slips on the same sheet)
+  const seenItemKeys = new Set<string>();
+  const rawItems = Array.isArray(receipt.itens) ? receipt.itens : [];
+  const uniqueItems: typeof receipt.itens = [];
+
+  for (const it of rawItems) {
+    const code = String(it.codigo || '').trim();
+    const desc = String(it.descricao || '').trim().toUpperCase();
+    const key = `${code}|${desc}`;
+    if (!seenItemKeys.has(key)) {
+      seenItemKeys.add(key);
+      uniqueItems.push(it);
+    }
+  }
+
+  // Fallback to rawItems if deduplication was empty
+  const displayItems = uniqueItems.length > 0 ? uniqueItems : rawItems;
+
+  // Dynamically calculate row height and font size so that ALL items (proventos & descontos)
+  // fit completely within tblBodyHeight without ever truncating or dropping items!
+  const itemCount = Math.max(displayItems.length, 1);
+  const rowHeight = itemCount > 16
+    ? Math.max(3.2, (tblBodyHeight - 2) / itemCount)
+    : 4.5;
+  const baseItemFontSize = itemCount > 18 ? 5.8 : itemCount > 14 ? 6.4 : 7.2;
+
+  let itemY = tblBodyStartY + (rowHeight * 0.85);
+
+  displayItems.forEach((item, index) => {
+    // Alternating subtle background
     if (index % 2 === 1) {
       doc.setFillColor(248, 250, 252);
-      doc.rect(margin + 0.2, itemY - 3.2, contentWidth - 0.4, 4.5, 'F');
+      doc.rect(margin + 0.2, itemY - (rowHeight * 0.72), contentWidth - 0.4, rowHeight, 'F');
     }
 
     // Light row divider
     doc.setDrawColor(226, 232, 240);
     doc.setLineWidth(0.15);
-    doc.line(margin, itemY + 1.3, rightEdge, itemY + 1.3);
+    doc.line(margin, itemY + (rowHeight * 0.28), rightEdge, itemY + (rowHeight * 0.28));
 
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(30, 41, 59);
 
-    doc.setFontSize(7.2);
-    doc.text(item.codigo, colXCode + 2, itemY);
+    doc.setFontSize(baseItemFontSize);
+    doc.text(String(item.codigo || ''), colXCode + 2, itemY);
 
-    // Dynamic text fitting: never truncate descriptions mid-word; fits within column width
-    const desc = item.descricao.trim();
+    // Dynamic text fitting: fits cleanly within column width
+    const desc = String(item.descricao || '').trim();
     const maxDescW = colWDesc - 5; // 82mm printable width
-    let descFontSize = 7.2;
+    let descFontSize = baseItemFontSize;
     doc.setFontSize(descFontSize);
-    while (doc.getTextWidth(desc) > maxDescW && descFontSize > 5.5) {
+    while (doc.getTextWidth(desc) > maxDescW && descFontSize > 5.0) {
       descFontSize -= 0.3;
       doc.setFontSize(descFontSize);
     }
@@ -274,20 +313,41 @@ export function generatePayReceiptPDF(
     doc.text(renderedDesc, colXDesc + 2.5, itemY);
 
     if (item.referencia) {
-      doc.text(item.referencia, colXRef + colWRef / 2, itemY, { align: 'center' });
+      doc.setFontSize(baseItemFontSize);
+      doc.text(String(item.referencia), colXRef + colWRef / 2, itemY, { align: 'center' });
     }
 
-    if (item.vencimento !== null && item.vencimento !== undefined) {
+    // Resolve vencimento value robustly
+    const rawVenc = item.vencimento ?? (item as any).vencimentos ?? ((item as any).tipo === 'PROVENTO' || (item as any).tipo === 'VENCIMENTO' ? (item as any).valor : null);
+    const vencVal = typeof rawVenc === 'number'
+      ? rawVenc
+      : rawVenc ? parseFloat(String(rawVenc).replace(/\./g, '').replace(',', '.')) : null;
+
+    if (vencVal !== null && !isNaN(vencVal) && vencVal > 0) {
       doc.setFont('helvetica', 'bold');
-      doc.text(formatBRL(item.vencimento), colXVenc + colWVenc - 2.5, itemY, { align: 'right' });
+      doc.setFontSize(baseItemFontSize);
+      doc.setTextColor(15, 23, 42);
+      doc.text(formatBRL(vencVal), colXVenc + colWVenc - 2.5, itemY, { align: 'right' });
       doc.setFont('helvetica', 'normal');
+      doc.setTextColor(30, 41, 59);
     }
 
-    if (item.desconto !== null && item.desconto !== undefined) {
-      doc.text(formatBRL(item.desconto), colXDescVal + colWDescVal - 2.5, itemY, { align: 'right' });
+    // Resolve desconto value robustly
+    const rawDesc = item.desconto ?? (item as any).descontos ?? (item as any).valorDesconto ?? ((item as any).tipo === 'DESCONTO' ? (item as any).valor : null);
+    const descVal = typeof rawDesc === 'number'
+      ? rawDesc
+      : rawDesc ? parseFloat(String(rawDesc).replace(/\./g, '').replace(',', '.')) : null;
+
+    if (descVal !== null && !isNaN(descVal) && descVal > 0) {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(baseItemFontSize);
+      doc.setTextColor(190, 18, 60); // Rose-700 ensures deductions are clearly visible
+      doc.text(formatBRL(descVal), colXDescVal + colWDescVal - 2.5, itemY, { align: 'right' });
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(30, 41, 59);
     }
 
-    itemY += 4.5;
+    itemY += rowHeight;
   });
 
   // DRAW ALL GRID BORDERS AND VERTICAL LINES ON TOP (NO CUT LINES!)
@@ -334,7 +394,40 @@ export function generatePayReceiptPDF(
   doc.text('Emitido nos termos do Art. 464 da CLT e Lei Federal nº 14.063/2020.', margin + 3, curY + 8.5);
   doc.text('Autenticidade e assinatura digital chanceladas por Certificado ICP-Brasil.', margin + 3, curY + 12.5);
 
-  // Right side: Totals
+  // Right side: Totals resolution (auto-calculating if 0 or missing)
+  const rawTotVenc = receipt.totalVencimentos ?? (receipt as any).total_vencimentos;
+  const rawTotDesc = receipt.totalDescontos ?? (receipt as any).total_descontos;
+  const rawLiq = receipt.valorLiquido ?? (receipt as any).valor_liquido;
+
+  let totVencNum = typeof rawTotVenc === 'number'
+    ? rawTotVenc
+    : rawTotVenc ? parseFloat(String(rawTotVenc).replace(/\./g, '').replace(',', '.')) : 0;
+  let totDescNum = typeof rawTotDesc === 'number'
+    ? rawTotDesc
+    : rawTotDesc ? parseFloat(String(rawTotDesc).replace(/\./g, '').replace(',', '.')) : 0;
+
+  // Auto-calculate totalDescontos from items if it was 0 or missing
+  if ((!totDescNum || isNaN(totDescNum)) && displayItems.length > 0) {
+    totDescNum = displayItems.reduce((acc, it) => {
+      const d = it.desconto ?? (it as any).descontos ?? (it as any).valorDesconto ?? ((it as any).tipo === 'DESCONTO' ? (it as any).valor : 0);
+      const n = typeof d === 'number' ? d : d ? parseFloat(String(d).replace(/\./g, '').replace(',', '.')) || 0 : 0;
+      return acc + (n > 0 ? n : 0);
+    }, 0);
+  }
+
+  // Auto-calculate totalVencimentos if 0 or missing
+  if ((!totVencNum || isNaN(totVencNum)) && displayItems.length > 0) {
+    totVencNum = displayItems.reduce((acc, it) => {
+      const v = it.vencimento ?? (it as any).vencimentos ?? ((it as any).tipo === 'PROVENTO' || (it as any).tipo === 'VENCIMENTO' ? (it as any).valor : 0);
+      const n = typeof v === 'number' ? v : v ? parseFloat(String(v).replace(/\./g, '').replace(',', '.')) || 0 : 0;
+      return acc + (n > 0 ? n : 0);
+    }, 0);
+  }
+
+  const liqNum = typeof rawLiq === 'number'
+    ? rawLiq
+    : rawLiq ? parseFloat(String(rawLiq).replace(/\./g, '').replace(',', '.')) : +(totVencNum - totDescNum).toFixed(2);
+
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(6.5);
   doc.setTextColor(71, 85, 105);
@@ -344,8 +437,10 @@ export function generatePayReceiptPDF(
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.5);
   doc.setTextColor(15, 23, 42);
-  doc.text(formatBRL(receipt.totalVencimentos), colXVenc + colWVenc - 2.5, curY + 7.6, { align: 'right' });
-  doc.text(formatBRL(receipt.totalDescontos), colXDescVal + colWDescVal - 2.5, curY + 7.6, { align: 'right' });
+  doc.text(formatBRL(totVencNum), colXVenc + colWVenc - 2.5, curY + 7.6, { align: 'right' });
+  doc.setTextColor(190, 18, 60); // Distinct Rose-700 color for total deductions
+  doc.text(formatBRL(totDescNum), colXDescVal + colWDescVal - 2.5, curY + 7.6, { align: 'right' });
+  doc.setTextColor(15, 23, 42);
 
   // Row 2 Right: Valor Líquido
   doc.setFont('helvetica', 'bold');
@@ -355,7 +450,7 @@ export function generatePayReceiptPDF(
 
   doc.setFontSize(10.5);
   doc.setTextColor(15, 23, 42);
-  doc.text(`R$ ${formatBRL(receipt.valorLiquido)}`, rightEdge - 2.5, curY + 13.8, { align: 'right' });
+  doc.text(`R$ ${formatBRL(liqNum)}`, rightEdge - 2.5, curY + 13.8, { align: 'right' });
 
   // 3. Draw ALL Border & Divider Lines ON TOP (Guaranteeing unbroken sharp lines!)
   doc.setDrawColor(51, 65, 85);

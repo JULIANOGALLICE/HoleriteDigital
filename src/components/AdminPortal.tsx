@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Employee, PayReceipt, SystemConfig, MedicalCertificate, IncomeReport } from '../types';
 import { formatBRL, downloadPayReceiptPDF, generateSignedPayReceiptBase64, generatePayReceiptPDF } from '../utils/pdfGenerator';
-import { openWhatsAppDirect, openWhatsAppReminderDirect } from '../utils/notifications';
+import { createSignatureReminderWhatsAppMessage } from '../utils/notifications';
 import { dispatchWhatsAppSmart } from '../services/whatsappService';
 import {
   Users,
@@ -25,7 +25,6 @@ import {
   CheckSquare,
   Settings,
   KeyRound,
-  Award,
   Stethoscope,
   BellRing,
   Lock,
@@ -113,8 +112,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   const [sendingWhatsappCodigo, setSendingWhatsappCodigo] = useState<string | null>(null);
 
   const handleSendWhatsApp = async (emp: Employee, receipt: PayReceipt) => {
-    if (!systemConfig) {
-      openWhatsAppDirect(emp, receipt);
+    if (!systemConfig || !systemConfig.evolutionApiUrl || !systemConfig.evolutionApiKey || !systemConfig.evolutionInstance) {
+      onOpenSettingsModal('COMUNICACAO');
       return;
     }
 
@@ -133,10 +132,34 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
         }
       }
 
-      await dispatchWhatsAppSmart(systemConfig, emp, receipt, {
-        pdfBase64,
-        openFallbackWindow: true
+      const res = await dispatchWhatsAppSmart(systemConfig, emp, receipt, {
+        pdfBase64
       });
+
+      if (res.success) {
+        confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
+      }
+    } finally {
+      setSendingWhatsappCodigo(null);
+    }
+  };
+
+  const handleSendWhatsAppReminder = async (emp: Employee, receipt: PayReceipt) => {
+    if (!systemConfig || !systemConfig.evolutionApiUrl || !systemConfig.evolutionApiKey || !systemConfig.evolutionInstance) {
+      onOpenSettingsModal('COMUNICACAO');
+      return;
+    }
+
+    setSendingWhatsappCodigo(emp.codigo);
+    try {
+      const reminderText = createSignatureReminderWhatsAppMessage(emp, receipt);
+      const res = await dispatchWhatsAppSmart(systemConfig, emp, receipt, {
+        customText: reminderText
+      });
+
+      if (res.success) {
+        confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
+      }
     } finally {
       setSendingWhatsappCodigo(null);
     }
@@ -199,24 +222,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               <span>Cobrar E-mail ({pendingCount})</span>
             </button>
           )}
-
-          <button
-            onClick={() => onOpenSettingsModal('CERTIFICADO_A1')}
-            className="px-3 sm:px-3.5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center sm:justify-start gap-1.5 cursor-pointer min-h-[40px]"
-            title="Cadastrar e gerenciar Certificado Digital A1 (.pfx) para assinatura de holerites"
-          >
-            <Award className="w-4 h-4 text-amber-200 shrink-0" />
-            <span>Certificado A1</span>
-          </button>
-
-          <button
-            onClick={() => onOpenSettingsModal('EMAIL_SERVER')}
-            className="px-3 sm:px-3.5 py-2.5 bg-blue-900/60 hover:bg-blue-800 text-blue-100 border border-blue-700/60 font-semibold text-xs rounded-xl shadow-sm transition-all flex items-center justify-center sm:justify-start gap-1.5 cursor-pointer min-h-[40px]"
-            title="Configurar servidor de e-mail, SMTP e remetente"
-          >
-            <Mail className="w-4 h-4 text-blue-400 shrink-0" />
-            <span>E-mail (SMTP)</span>
-          </button>
 
           {onOpenUserManagement && (
             <button
@@ -561,11 +566,17 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                   <div className="flex items-center gap-1">
                     {receipt && !isSigned && (
                       <button
-                        onClick={() => openWhatsAppReminderDirect(emp, receipt)}
+                        disabled={sendingWhatsappCodigo === emp.codigo}
+                        onClick={() => handleSendWhatsAppReminder(emp, receipt)}
                         className="px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer min-h-[36px]"
-                        title="Cobrar Assinatura via WhatsApp"
+                        title="Enviar Lembrete de Assinatura via Evolution API"
                       >
-                        <BellRing className="w-3.5 h-3.5 text-amber-600" /> Cobrar
+                        {sendingWhatsappCodigo === emp.codigo ? (
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-600" />
+                        ) : (
+                          <BellRing className="w-3.5 h-3.5 text-amber-600" />
+                        )}
+                        Cobrar
                       </button>
                     )}
                     {receipt && (
@@ -716,14 +727,19 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
 
                     <td className="py-3 px-4 text-right">
                       <div className="flex items-center justify-end gap-1">
-                        {/* Lembrete de Assinatura Rápido se Pendente */}
+                        {/* Lembrete de Assinatura Rápido se Pendente via API */}
                         {receipt && !isSigned && (
                           <button
-                            onClick={() => openWhatsAppReminderDirect(emp, receipt)}
+                            disabled={sendingWhatsappCodigo === emp.codigo}
+                            onClick={() => handleSendWhatsAppReminder(emp, receipt)}
                             className="p-1.5 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer"
-                            title="Cobrar Assinatura via WhatsApp (Abre mensagem formal com link direto)"
+                            title="Enviar Lembrete de Assinatura via WhatsApp (Evolution API)"
                           >
-                            <BellRing className="w-4 h-4" />
+                            {sendingWhatsappCodigo === emp.codigo ? (
+                              <RefreshCw className="w-4 h-4 animate-spin text-amber-600" />
+                            ) : (
+                              <BellRing className="w-4 h-4" />
+                            )}
                           </button>
                         )}
 
@@ -753,7 +769,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                             disabled={sendingWhatsappCodigo === emp.codigo}
                             onClick={() => handleSendWhatsApp(emp, receipt)}
                             className="p-1.5 text-slate-500 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
-                            title="Enviar Comprovante via WhatsApp (Evolution API / WhatsApp Web)"
+                            title="Enviar Comprovante via WhatsApp (Evolution API)"
                           >
                             {sendingWhatsappCodigo === emp.codigo ? (
                               <RefreshCw className="w-4 h-4 animate-spin text-emerald-600" />

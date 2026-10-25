@@ -611,19 +611,60 @@ ${extractedText}`;
 
       const competencia = rec.competencia || '2026-09';
       const mesAno = rec.mesAno || 'Setembro de 2026';
-      const salarioBase = Number(emp.salarioBase || rec.salarioBase) || 2000;
-      const totalVenc = Number(rec.totalVencimentos) || salarioBase;
-      const totalDesc = Number(rec.totalDescontos) || 0;
-      const valorLiq = Number(rec.valorLiquido) || +(totalVenc - totalDesc).toFixed(2);
+      const parseNum = (val: any): number => {
+        if (typeof val === 'number') return isNaN(val) ? 0 : val;
+        if (!val) return 0;
+        const s = String(val).trim();
+        if (s.includes(',')) {
+          const n = parseFloat(s.replace(/\./g, '').replace(',', '.'));
+          return isNaN(n) ? 0 : n;
+        }
+        const n = parseFloat(s);
+        return isNaN(n) ? 0 : n;
+      };
+
+      const parseItemVal = (val: any): number | null => {
+        if (val === null || val === undefined) return null;
+        const n = parseNum(val);
+        return n > 0 ? n : null;
+      };
+
+      const salarioBase = parseNum(emp.salarioBase || rec.salarioBase) || 2000;
+      let totalVenc = parseNum(rec.totalVencimentos);
+      let totalDesc = parseNum(rec.totalDescontos);
+      let valorLiq = parseNum(rec.valorLiquido);
 
       const rawItens = Array.isArray(rec.itens) ? rec.itens : Array.isArray(rec.rubricas) ? rec.rubricas : [];
-      const itens = rawItens.map((it: any) => ({
-        codigo: String(it.codigo || '1'),
-        descricao: String(it.descricao || 'EVENTO'),
-        referencia: String(it.referencia || ''),
-        vencimento: it.vencimento !== null && it.vencimento !== undefined ? Number(it.vencimento) : null,
-        desconto: it.desconto !== null && it.desconto !== undefined ? Number(it.desconto) : null
-      }));
+      const seenItemKeys = new Set<string>();
+      const itens: any[] = [];
+
+      for (const it of rawItens) {
+        const rawCode = String(it.codigo || '1').trim();
+        const rawDesc = String(it.descricao || 'EVENTO').trim();
+        const key = `${rawCode}|${rawDesc.toUpperCase()}`;
+        if (seenItemKeys.has(key)) continue;
+        seenItemKeys.add(key);
+
+        const vVal = parseItemVal(it.vencimento ?? it.vencimentos ?? (it.tipo === 'PROVENTO' || it.tipo === 'VENCIMENTO' ? it.valor : null));
+        const dVal = parseItemVal(it.desconto ?? it.descontos ?? it.valorDesconto ?? (it.tipo === 'DESCONTO' ? it.valor : null));
+
+        itens.push({
+          codigo: rawCode,
+          descricao: rawDesc,
+          referencia: String(it.referencia || ''),
+          vencimento: vVal,
+          desconto: dVal
+        });
+      }
+
+      if (!totalDesc && itens.length > 0) {
+        totalDesc = +itens.reduce((acc, it) => acc + (it.desconto || 0), 0).toFixed(2);
+      }
+      if (!totalVenc && itens.length > 0) {
+        totalVenc = +itens.reduce((acc, it) => acc + (it.vencimento || 0), 0).toFixed(2);
+      }
+      if (!totalVenc) totalVenc = salarioBase;
+      if (!valorLiq) valorLiq = +(totalVenc - totalDesc).toFixed(2);
 
       if (itens.length === 0) {
         itens.push({

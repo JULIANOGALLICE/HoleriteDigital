@@ -334,7 +334,7 @@ export const EmployeePortal: React.FC<EmployeePortalProps> = ({
                 Visualização do Holerite Bloqueada
               </h3>
               <p className="text-xs text-amber-800 max-w-lg mx-auto leading-relaxed">
-                Por determinação da Gestão de Recursos Humanos, antes de poder visualizar e assinar seu holerite é obrigatório completar seu cadastro (endereço, dados bancários e ao menos um telefone de emergência) e alterar sua senha no primeiro acesso.
+                Por determinação da Gestão de Recursos Humanos, antes de poder visualizar e assinar seu holerite é obrigatório completar seu cadastro (endereço residencial e ao menos um telefone de emergência) e alterar sua senha no primeiro acesso.
               </p>
             </div>
           ) : currentReceipt ? (
@@ -629,7 +629,7 @@ export const EmployeePortal: React.FC<EmployeePortalProps> = ({
                 <User className="w-5 h-5 text-blue-600" /> Meus Dados Cadastrais & Emergência
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                Mantenha seu telefone, e-mail, endereço residencial, conta bancária e contatos de emergência atualizados.
+                Mantenha seu telefone, e-mail, endereço residencial e contatos de emergência atualizados.
               </p>
             </div>
 
@@ -719,101 +719,6 @@ export const EmployeePortal: React.FC<EmployeePortalProps> = ({
                       <div>
                         <span className="text-slate-400 block text-[11px]">Cargo (fixo)</span>
                         <span className="font-bold text-slate-800">{employee.cargo}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Dados Bancários & PIX */}
-                <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
-                  <h4 className="font-bold text-sm text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-2">
-                    <Wallet className="w-4 h-4 text-emerald-600" /> Dados Bancários para Pagamento & Chave Pix
-                  </h4>
-
-                  <div className="space-y-3 text-xs">
-                    <div>
-                      <label className="font-semibold text-slate-700 block mb-1">Chave Pix</label>
-                      <input
-                        type="text"
-                        value={editFormData.dadosBancarios.chavePix || ''}
-                        onChange={(e) =>
-                          setEditFormData({
-                            ...editFormData,
-                            dadosBancarios: { ...editFormData.dadosBancarios, chavePix: e.target.value }
-                          })
-                        }
-                        placeholder="CPF, Telefone, E-mail ou Chave Aleatória"
-                        className="w-full px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 font-medium"
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="font-semibold text-slate-700 block mb-1">Banco</label>
-                        <input
-                          type="text"
-                          value={editFormData.dadosBancarios.banco}
-                          onChange={(e) =>
-                            setEditFormData({
-                              ...editFormData,
-                              dadosBancarios: { ...editFormData.dadosBancarios, banco: e.target.value }
-                            })
-                          }
-                          className="w-full px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 font-medium"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="font-semibold text-slate-700 block mb-1">Tipo de Conta</label>
-                        <select
-                          value={editFormData.dadosBancarios.tipoConta}
-                          onChange={(e) =>
-                            setEditFormData({
-                              ...editFormData,
-                              dadosBancarios: {
-                                ...editFormData.dadosBancarios,
-                                tipoConta: e.target.value as any
-                              }
-                            })
-                          }
-                          className="w-full px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 font-medium bg-white"
-                        >
-                          <option value="CORRENTE">Conta Corrente</option>
-                          <option value="POUPANCA">Conta Poupança</option>
-                          <option value="SALARIO">Conta Salário</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="font-semibold text-slate-700 block mb-1">Agência</label>
-                        <input
-                          type="text"
-                          value={editFormData.dadosBancarios.agencia}
-                          onChange={(e) =>
-                            setEditFormData({
-                              ...editFormData,
-                              dadosBancarios: { ...editFormData.dadosBancarios, agencia: e.target.value }
-                            })
-                          }
-                          className="w-full px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 font-medium"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="font-semibold text-slate-700 block mb-1">Conta com Dígito</label>
-                        <input
-                          type="text"
-                          value={editFormData.dadosBancarios.conta}
-                          onChange={(e) =>
-                            setEditFormData({
-                              ...editFormData,
-                              dadosBancarios: { ...editFormData.dadosBancarios, conta: e.target.value }
-                            })
-                          }
-                          className="w-full px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 font-medium"
-                        />
                       </div>
                     </div>
                   </div>
@@ -1098,27 +1003,6 @@ export const EmployeePortal: React.FC<EmployeePortalProps> = ({
                   <div>
                     <span className="text-slate-500 block">Telefone WhatsApp</span>
                     <span className="font-bold text-slate-900">{employee.telefone}</span>
-                  </div>
-                </div>
-
-                {/* Dados Bancários */}
-                <div className="border-t border-slate-200 pt-4">
-                  <h4 className="font-bold text-xs text-slate-800 flex items-center gap-1.5 mb-2">
-                    <Wallet className="w-3.5 h-3.5 text-emerald-600" /> Dados Bancários & PIX
-                  </h4>
-                  <div className="grid grid-cols-2 gap-2 text-xs text-slate-600">
-                    <div>
-                      <span className="text-slate-400 block text-[10px] uppercase">Banco / Agência / Conta</span>
-                      <span className="font-semibold text-slate-800">
-                        {employee.dadosBancarios.banco} • Ag: {employee.dadosBancarios.agencia} • CC: {employee.dadosBancarios.conta}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 block text-[10px] uppercase">Chave Pix</span>
-                      <span className="font-semibold text-emerald-800 font-mono">
-                        {employee.dadosBancarios.chavePix || 'Não informada'}
-                      </span>
-                    </div>
                   </div>
                 </div>
               </div>
