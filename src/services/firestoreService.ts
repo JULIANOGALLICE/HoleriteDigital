@@ -210,6 +210,49 @@ export async function signReceiptFirestore(
   }
 }
 
+export async function deleteReceiptFirestore(receiptId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'receipts', receiptId));
+  } catch (error) {
+    console.warn('deleteReceiptFirestore notice:', error);
+  }
+}
+
+export async function deleteReceiptsBatchFirestore(receiptIds: string[]): Promise<void> {
+  if (!receiptIds || receiptIds.length === 0) return;
+  const CHUNK_SIZE = 150;
+  for (let i = 0; i < receiptIds.length; i += CHUNK_SIZE) {
+    const chunk = receiptIds.slice(i, i + CHUNK_SIZE);
+    try {
+      const batch = writeBatch(db);
+      chunk.forEach(id => {
+        batch.delete(doc(db, 'receipts', id));
+      });
+      await batch.commit();
+    } catch (e) {
+      console.warn('deleteReceiptsBatchFirestore batch error, fallback to individual deletes:', e);
+      await Promise.allSettled(chunk.map(id => deleteDoc(doc(db, 'receipts', id))));
+    }
+  }
+}
+
+export async function toggleEmployeeBlockFirestore(
+  employeeCodigo: string,
+  bloqueado: boolean,
+  motivo?: string
+): Promise<void> {
+  try {
+    const payload: Partial<Employee> = {
+      bloqueado,
+      bloqueadoEm: bloqueado ? new Date().toISOString() : undefined,
+      ...(motivo !== undefined && { motivoBloqueio: motivo })
+    };
+    await updateDoc(doc(db, 'employees', employeeCodigo), cleanUndefined(payload));
+  } catch (error) {
+    console.warn('toggleEmployeeBlockFirestore notice:', error);
+  }
+}
+
 // 3. System Config
 export function subscribeSystemConfig(callback: (config: SystemConfig) => void) {
   const path = 'systemConfig/default';

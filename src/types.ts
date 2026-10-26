@@ -46,6 +46,9 @@ export interface Employee {
   dataNascimento?: string;
   observacoes?: string;
   status: 'ATIVO' | 'AFASTADO' | 'FERIAS' | 'DESLIGADO';
+  bloqueado?: boolean; // Bloqueio administrativo de acesso pelo Gestor
+  bloqueadoEm?: string;
+  motivoBloqueio?: string;
   role?: 'COLABORADOR' | 'GESTOR' | 'ADMIN';
   authUid?: string;
   cadastroCompleto?: boolean;
@@ -297,6 +300,11 @@ export type SystemLogEventType =
   | 'ENVIO_ATESTADO'
   | 'ANALISE_ATESTADO'
   | 'ENVIO_COMPROVANTE_IRPF'
+  | 'EXCLUSAO_IRPF'
+  | 'EXCLUSAO_HOLERITE'
+  | 'EXCLUSAO_COLABORADOR'
+  | 'BLOQUEIO_COLABORADOR'
+  | 'DESBLOQUEIO_COLABORADOR'
   | 'IMPORTACAO_PLANILHA'
   | 'IMPORTACAO_HOLERITE'
   | 'CONFIGURACAO_SISTEMA';

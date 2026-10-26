@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Employee, PayReceipt, SystemConfig, MedicalCertificate, IncomeReport } from '../types';
 import { formatBRL, downloadPayReceiptPDF, generateSignedPayReceiptBase64, generatePayReceiptPDF } from '../utils/pdfGenerator';
 import { getEmployeeIncomeReports } from '../utils/incomeReportPdfGenerator';
@@ -30,7 +30,12 @@ import {
   Stethoscope,
   BellRing,
   Lock,
+  Unlock,
   AlertCircle,
+  AlertTriangle,
+  ShieldAlert,
+  Trash2,
+  Calendar,
   FileSpreadsheet,
   History
 } from 'lucide-react';
@@ -57,6 +62,11 @@ interface AdminPortalProps {
   onViewIncomeReport?: (report: IncomeReport) => void;
   onOpenSystemLogs?: () => void;
   systemLogsCount?: number;
+  onDeleteReceipt?: (receipt: PayReceipt, employee?: Employee) => void;
+  onDeleteReceiptsByMonth?: (mesAno: string) => void;
+  onDeleteReceiptsByYear?: (ano: string) => void;
+  onDeleteEmployee?: (employee: Employee) => void;
+  onToggleBlockEmployee?: (employee: Employee, bloqueado: boolean) => void;
 }
 
 export const AdminPortal: React.FC<AdminPortalProps> = ({
@@ -79,12 +89,24 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   onOpenIncomeReports,
   onViewIncomeReport,
   onOpenSystemLogs,
-  systemLogsCount
+  systemLogsCount,
+  onDeleteReceipt,
+  onDeleteReceiptsByMonth,
+  onDeleteReceiptsByYear,
+  onDeleteEmployee,
+  onToggleBlockEmployee
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDepartment, setSelectedDepartment] = useState('TODOS');
   const [selectedMonth, setSelectedMonth] = useState('Setembro de 2026');
   const [signatureFilter, setSignatureFilter] = useState<'ALL' | 'PENDING' | 'SIGNED'>('ALL');
+
+  // Deletion and Blocking States
+  const [receiptToDelete, setReceiptToDelete] = useState<{ receipt: PayReceipt; employee?: Employee } | null>(null);
+  const [isBatchDeleteOpen, setIsBatchDeleteOpen] = useState(false);
+  const [batchDeleteType, setBatchDeleteType] = useState<'MES' | 'ANO'>('MES');
+  const [batchDeleteYear, setBatchDeleteYear] = useState<string>('2026');
+  const [employeeToDeleteCascade, setEmployeeToDeleteCascade] = useState<Employee | null>(null);
 
   // Filtered receipts for selected month
   const monthReceipts = receipts.filter(r => r.mesAno === selectedMonth);
@@ -118,6 +140,33 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   });
 
   const departments = Array.from(new Set(employees.map(e => e.departamento || 'CARTÓRIO GERAL')));
+
+  // Lista dinâmica de meses com base nos holerites cadastrados no sistema
+  const availableMonths = useMemo(() => {
+    const list: string[] = [];
+    receipts.forEach(r => {
+      if (r.mesAno && !list.includes(r.mesAno)) list.push(r.mesAno);
+    });
+    ['Setembro de 2026', 'Agosto de 2026', 'Julho de 2026'].forEach(m => {
+      if (!list.includes(m)) list.push(m);
+    });
+    return list;
+  }, [receipts]);
+
+  // Lista de anos para exclusão anual de holerites
+  const availableReceiptYears = useMemo(() => {
+    const years = new Set<string>();
+    receipts.forEach(r => {
+      const match = r.mesAno?.match(/\b(20\d\d)\b/);
+      if (match) years.add(match[1]);
+      if (r.competencia) {
+        const y = r.competencia.split('-')[0];
+        if (y && y.length === 4) years.add(y);
+      }
+    });
+    if (years.size === 0) years.add('2026');
+    return Array.from(years).sort().reverse();
+  }, [receipts]);
 
   const [sendingWhatsappCodigo, setSendingWhatsappCodigo] = useState<string | null>(null);
 
@@ -328,6 +377,19 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
           >
             <Settings className="w-4 h-4 text-blue-400 shrink-0" />
             <span>Configurações</span>
+          </button>
+
+          {/* Exclusão em Lote de Holerites */}
+          <button
+            onClick={() => {
+              setBatchDeleteType('MES');
+              setIsBatchDeleteOpen(true);
+            }}
+            className="px-3 sm:px-3.5 py-2.5 bg-rose-950/70 hover:bg-rose-900 text-rose-200 font-semibold text-xs rounded-xl border border-rose-800/60 shadow-sm transition-all flex items-center justify-center sm:justify-start gap-1.5 cursor-pointer min-h-[40px]"
+            title="Excluir holerites em lote por mês selecionado ou por ano completo"
+          >
+            <Trash2 className="w-4 h-4 text-rose-400 shrink-0" />
+            <span>Excluir Holerites em Lote</span>
           </button>
         </div>
       </div>
@@ -548,9 +610,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               onChange={(e) => setSelectedMonth(e.target.value)}
               className="bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs font-bold text-blue-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
             >
-              <option value="Setembro de 2026">Setembro de 2026</option>
-              <option value="Agosto de 2026">Agosto de 2026</option>
-              <option value="Julho de 2026">Julho de 2026</option>
+              {availableMonths.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
             </select>
           </div>
         </div>
@@ -573,6 +637,15 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="font-mono text-xs font-bold text-slate-500">#{emp.codigo}</span>
                       <span className="font-bold text-slate-900 text-sm">{emp.nome}</span>
+                      {emp.bloqueado ? (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-red-100 text-red-800 border border-red-200">
+                          <Lock className="w-2.5 h-2.5 text-red-600" /> BLOQUEADO
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          Ativo
+                        </span>
+                      )}
                     </div>
                     <p className="text-[11px] text-slate-500 mt-0.5">
                       {emp.cargo} • {emp.departamento}
@@ -664,6 +737,19 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                   </div>
 
                   <div className="flex items-center gap-1">
+                    {/* Botão de Bloquear / Desbloquear Acesso */}
+                    <button
+                      onClick={() => onToggleBlockEmployee?.(emp, !emp.bloqueado)}
+                      className={`p-2 rounded-lg transition-colors cursor-pointer min-h-[36px] min-w-[36px] flex items-center justify-center border ${
+                        emp.bloqueado
+                          ? 'text-red-700 bg-red-50 border-red-200 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-300'
+                          : 'text-slate-400 hover:text-red-600 hover:bg-red-50 border-slate-200'
+                      }`}
+                      title={emp.bloqueado ? "Desbloquear Acesso à Plataforma" : "Bloquear Acesso à Plataforma"}
+                    >
+                      {emp.bloqueado ? <Unlock className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
+                    </button>
+
                     <button
                       onClick={() => onOpenEditModal(emp)}
                       className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer min-h-[36px] min-w-[36px] flex items-center justify-center border border-slate-200"
@@ -671,6 +757,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                     >
                       <Edit className="w-4 h-4" />
                     </button>
+
                     {receipt && (
                       <button
                         onClick={() => onViewReceipt(emp, receipt)}
@@ -688,6 +775,24 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                         <Download className="w-4 h-4" />
                       </button>
                     )}
+                    {receipt && (
+                      <button
+                        onClick={() => setReceiptToDelete({ receipt, employee: emp })}
+                        className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer min-h-[36px] min-w-[36px] flex items-center justify-center border border-rose-200"
+                        title="Excluir Holerite"
+                      >
+                        <Trash2 className="w-4 h-4 text-rose-600" />
+                      </button>
+                    )}
+
+                    {/* Excluir Colaborador (Cascata) */}
+                    <button
+                      onClick={() => setEmployeeToDeleteCascade(emp)}
+                      className="p-2 text-slate-400 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors cursor-pointer min-h-[36px] min-w-[36px] flex items-center justify-center border border-slate-200"
+                      title="Excluir Colaborador e dados vinculados em cascata"
+                    >
+                      <Trash2 className="w-4 h-4 text-slate-400 hover:text-red-600" />
+                    </button>
                   </div>
                 </div>
               </div>
@@ -728,8 +833,17 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                     </td>
 
                     <td className="py-3 px-4">
-                      <div className="font-bold text-slate-900 flex items-center gap-1.5">
-                        {emp.nome}
+                      <div className="font-bold text-slate-900 flex items-center gap-1.5 flex-wrap">
+                        <span>{emp.nome}</span>
+                        {emp.bloqueado ? (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-bold bg-red-100 text-red-800 border border-red-200">
+                            <Lock className="w-2.5 h-2.5 text-red-600" /> BLOQUEADO
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            Ativo
+                          </span>
+                        )}
                       </div>
                       <div className="text-[11px] text-slate-500 flex items-center gap-2 mt-0.5">
                         <span>{emp.cargo}</span>
@@ -883,6 +997,39 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                             <Download className="w-4 h-4" />
                           </button>
                         )}
+
+                        {/* Excluir Holerite Individual */}
+                        {receipt && (
+                          <button
+                            onClick={() => setReceiptToDelete({ receipt, employee: emp })}
+                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                            title="Excluir este holerite"
+                          >
+                            <Trash2 className="w-4 h-4 text-rose-500" />
+                          </button>
+                        )}
+
+                        {/* Bloquear / Desbloquear Acesso */}
+                        <button
+                          onClick={() => onToggleBlockEmployee?.(emp, !emp.bloqueado)}
+                          className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                            emp.bloqueado
+                              ? 'text-red-700 bg-red-50 hover:bg-emerald-50 hover:text-emerald-700'
+                              : 'text-slate-400 hover:text-red-600 hover:bg-red-50'
+                          }`}
+                          title={emp.bloqueado ? "Desbloquear Acesso à Plataforma" : "Bloquear Acesso à Plataforma"}
+                        >
+                          {emp.bloqueado ? <Unlock className="w-4 h-4 text-red-600" /> : <Lock className="w-4 h-4" />}
+                        </button>
+
+                        {/* Excluir Colaborador (Cascata) */}
+                        <button
+                          onClick={() => setEmployeeToDeleteCascade(emp)}
+                          className="p-1.5 text-slate-400 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                          title="Excluir Colaborador (em cascata com holerites e IRPF)"
+                        >
+                          <Trash2 className="w-4 h-4 text-slate-400 hover:text-red-600" />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -892,6 +1039,253 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
           </table>
         </div>
       </div>
+
+      {/* 1. Modal de Exclusão Individual de Holerite */}
+      {receiptToDelete && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-rose-200 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="p-3 bg-rose-100 text-rose-600 rounded-xl shrink-0">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900 text-base">
+                  Excluir Holerite?
+                </h3>
+                <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                  Confirma a exclusão do holerite de <strong>{receiptToDelete.employee?.nome || `Colaborador #${receiptToDelete.receipt.employeeCodigo}`}</strong> referente a <strong>{receiptToDelete.receipt.mesAno}</strong>?
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1 font-mono">
+              <div className="flex justify-between text-slate-600">
+                <span>Competência:</span>
+                <strong>{receiptToDelete.receipt.competencia || receiptToDelete.receipt.mesAno}</strong>
+              </div>
+              <div className="flex justify-between text-slate-600">
+                <span>Valor Líquido:</span>
+                <strong className="text-slate-900">R$ {formatBRL(receiptToDelete.receipt.valorLiquido)}</strong>
+              </div>
+              <div className="flex justify-between text-slate-600">
+                <span>Status da Assinatura:</span>
+                <span className={receiptToDelete.receipt.statusAssinatura === 'ASSINADO' ? 'text-emerald-700 font-bold' : 'text-amber-700 font-bold'}>
+                  {receiptToDelete.receipt.statusAssinatura}
+                </span>
+              </div>
+            </div>
+
+            <p className="text-[11px] text-rose-700 bg-rose-50 p-2.5 rounded-lg border border-rose-200">
+              O holerite será removido do portal e o colaborador não poderá mais visualizá-lo ou baixá-lo.
+            </p>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setReceiptToDelete(null)}
+                className="px-4 py-2 rounded-xl text-slate-600 hover:text-slate-900 font-semibold text-xs hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (onDeleteReceipt && receiptToDelete) {
+                    onDeleteReceipt(receiptToDelete.receipt, receiptToDelete.employee);
+                  }
+                  setReceiptToDelete(null);
+                }}
+                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow-md transition-colors flex items-center gap-2 cursor-pointer"
+              >
+                <Trash2 className="w-4 h-4" />
+                Confirmar Exclusão
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 2. Modal de Exclusão de Holerites em Lote (Por Mês ou Por Ano) */}
+      {isBatchDeleteOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-rose-200 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="p-3 bg-rose-100 text-rose-600 rounded-xl shrink-0">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900 text-base">
+                  Exclusão de Holerites em Lote
+                </h3>
+                <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                  Selecione o tipo de exclusão em lote: por mês específico ou por ano completo.
+                </p>
+              </div>
+            </div>
+
+            {/* Alternar Mês ou Ano */}
+            <div className="flex rounded-xl bg-slate-100 p-1 text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => setBatchDeleteType('MES')}
+                className={`flex-1 py-2 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                  batchDeleteType === 'MES' ? 'bg-white text-rose-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Calendar className="w-3.5 h-3.5" />
+                Excluir por Mês
+              </button>
+              <button
+                type="button"
+                onClick={() => setBatchDeleteType('ANO')}
+                className={`flex-1 py-2 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                  batchDeleteType === 'ANO' ? 'bg-white text-rose-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Calendar className="w-3.5 h-3.5" />
+                Excluir por Ano Completo
+              </button>
+            </div>
+
+            {/* Seleção do Mês ou Ano */}
+            {batchDeleteType === 'MES' ? (
+              <div className="space-y-2">
+                <label className="block text-xs font-bold text-slate-700">Mês Selecionado para Exclusão:</label>
+                <select
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-bold bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                >
+                  {availableMonths.map(m => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+                <div className="p-3 bg-rose-50 rounded-xl border border-rose-200 text-xs text-rose-900">
+                  Total de holerites a serem excluídos de <strong>{selectedMonth}</strong>: <strong>{monthReceipts.length}</strong> holerite(s).
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <label className="block text-xs font-bold text-slate-700">Ano Completo para Exclusão:</label>
+                <select
+                  value={batchDeleteYear}
+                  onChange={(e) => setBatchDeleteYear(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-bold bg-white focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                >
+                  {availableReceiptYears.map(y => (
+                    <option key={y} value={y}>Ano {y}</option>
+                  ))}
+                </select>
+                {(() => {
+                  const yearCount = receipts.filter(r => r.mesAno?.includes(batchDeleteYear) || r.competencia?.startsWith(batchDeleteYear)).length;
+                  return (
+                    <div className="p-3 bg-rose-50 rounded-xl border border-rose-200 text-xs text-rose-900">
+                      Total de holerites a serem excluídos do ano <strong>{batchDeleteYear}</strong>: <strong>{yearCount}</strong> holerite(s).
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+
+            <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-xs text-amber-900 flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <span>
+                Esta ação apagará permanentemente todos os holerites selecionados do banco de dados na nuvem e do armazenamento local.
+              </span>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsBatchDeleteOpen(false)}
+                className="px-4 py-2 rounded-xl text-slate-600 hover:text-slate-900 font-semibold text-xs hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (batchDeleteType === 'MES') {
+                    if (onDeleteReceiptsByMonth) onDeleteReceiptsByMonth(selectedMonth);
+                  } else {
+                    if (onDeleteReceiptsByYear) onDeleteReceiptsByYear(batchDeleteYear);
+                  }
+                  setIsBatchDeleteOpen(false);
+                }}
+                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow-md transition-colors flex items-center gap-2 cursor-pointer"
+              >
+                <Trash2 className="w-4 h-4" />
+                {batchDeleteType === 'MES'
+                  ? `Excluir Holerites de ${selectedMonth.split(' ')[0]}`
+                  : `Excluir Todos os Holerites de ${batchDeleteYear}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 3. Modal de Exclusão do Colaborador em Cascata */}
+      {employeeToDeleteCascade && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-red-200 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="p-3 bg-red-100 text-red-600 rounded-xl shrink-0">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900 text-base">
+                  Excluir Colaborador em Cascata?
+                </h3>
+                <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                  Você está prestes a excluir o colaborador <strong>{employeeToDeleteCascade.nome}</strong> (matrícula <strong>#{employeeToDeleteCascade.codigo}</strong>).
+                </p>
+              </div>
+            </div>
+
+            {(() => {
+              const empRecCount = receipts.filter(r => r.employeeCodigo === employeeToDeleteCascade.codigo).length;
+              const empIrpfList = getEmployeeIncomeReports(employeeToDeleteCascade, incomeReports);
+              return (
+                <div className="p-3.5 bg-red-50 rounded-xl border border-red-200 text-xs text-red-900 space-y-2">
+                  <p className="font-bold flex items-center gap-1.5 text-red-800">
+                    <ShieldAlert className="w-4 h-4 text-red-600 shrink-0" />
+                    Exclusão Automática em Cascata:
+                  </p>
+                  <ul className="list-disc list-inside space-y-1 text-[11.5px] text-red-800/90 pl-1">
+                    <li><strong>{empRecCount}</strong> holerite(s) deste colaborador serão excluídos.</li>
+                    <li><strong>{empIrpfList.length}</strong> comprovante(s) de rendimentos IRPF serão excluídos.</li>
+                    <li>O usuário de acesso do colaborador será removido.</li>
+                  </ul>
+                  <p className="font-bold text-[11px] text-red-700">Esta ação é definitiva e não pode ser revertida.</p>
+                </div>
+              );
+            })()}
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setEmployeeToDeleteCascade(null)}
+                className="px-4 py-2 rounded-xl text-slate-600 hover:text-slate-900 font-semibold text-xs hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (onDeleteEmployee) {
+                    onDeleteEmployee(employeeToDeleteCascade);
+                  }
+                  setEmployeeToDeleteCascade(null);
+                }}
+                className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-xl shadow-md transition-colors flex items-center gap-2 cursor-pointer"
+              >
+                <Trash2 className="w-4 h-4" />
+                Confirmar Exclusão em Cascata
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

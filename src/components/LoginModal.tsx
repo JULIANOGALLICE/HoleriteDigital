@@ -243,6 +243,17 @@ export const LoginModal: React.FC<LoginModalProps> = ({
           return false;
         });
 
+      // Se o colaborador estiver bloqueado pelo gestor, nega o acesso
+      if (linkedEmp?.bloqueado || (userAcc.role === 'COLABORADOR' && emp?.bloqueado)) {
+        setErrorMessage('Acesso bloqueado pelo Gestor do Cartório. Procure o RH / Administração.');
+        recordLoginEvent(userAcc, linkedEmp || emp, {
+          is2FA: false,
+          success: false,
+          errorMsg: 'Tentativa de login por colaborador com acesso bloqueado pelo Gestor'
+        }).catch(() => {});
+        return;
+      }
+
       const storedPass = String(userAcc.senha || '').trim();
 
       if (userAcc.role === 'COLABORADOR' && !storedPass) {
@@ -307,6 +318,10 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     }
 
     if (emp) {
+      if (emp.bloqueado) {
+        setErrorMessage('Acesso bloqueado pelo Gestor do Cartório. Procure o RH / Administração.');
+        return;
+      }
       setErrorMessage(
         `Olá, ${emp.nome}! O seu acesso ainda não foi configurado pelo Gestor do RH. Solicite o cadastro do seu e-mail e senha inicial ao Gestor.`
       );

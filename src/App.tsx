@@ -48,6 +48,10 @@ import {
   saveIncomeReportsBatchFirestore,
   deleteIncomeReportFirestore,
   deleteIncomeReportsBatchFirestore,
+  deleteEmployeeFirestore,
+  deleteReceiptFirestore,
+  deleteReceiptsBatchFirestore,
+  toggleEmployeeBlockFirestore,
   clearSystemLogsFirestore,
   DEFAULT_CONFIG
 } from './services/firestoreService';
@@ -58,6 +62,12 @@ import {
   recordEmailDispatchEvent,
   recordSpreadsheetImportEvent,
   recordIncomeReportEvent,
+  recordDeleteReceiptEvent,
+  recordBatchDeleteReceiptsEvent,
+  recordDeleteIncomeReportEvent,
+  recordBatchDeleteIncomeReportsEvent,
+  recordDeleteEmployeeCascadeEvent,
+  recordToggleEmployeeBlockEvent,
   getInitialSampleLogs
 } from './services/loggerService';
 import { CheckCircle2, ShieldCheck } from 'lucide-react';
@@ -564,6 +574,14 @@ export default function App() {
 
   // Colaborador estritamente vinculado ao usuário logado
   const linkedEmployee = findLinkedEmployee(currentUser, employees);
+
+  // Se o colaborador logado tiver sido bloqueado pelo gestor, encerra o acesso imediatamente
+  useEffect(() => {
+    if (currentUser?.role === 'COLABORADOR' && linkedEmployee?.bloqueado) {
+      handleLogout();
+      showToast('Acesso bloqueado pelo Gestor do Cartório. Procure o RH / Administração.');
+    }
+  }, [currentUser, linkedEmployee]);
 
   // Actions
   const handleOpenDigitalSignature = (receipt: PayReceipt) => {
@@ -1076,6 +1094,11 @@ export default function App() {
   };
 
   const handleDeleteIncomeReport = async (id: string) => {
+    const targetReport = incomeReports.find(r => r.id === id);
+    if (targetReport) {
+      recordDeleteIncomeReportEvent(currentUser, targetReport).catch(() => {});
+    }
+
     // Atualiza o estado local e localStorage imediatamente para resposta instantânea na interface
     setIncomeReports(prev => {
       const filtered = prev.filter(r => r.id !== id);
@@ -1103,6 +1126,8 @@ export default function App() {
     const count = toDelete.length;
     if (count === 0) return;
 
+    recordBatchDeleteIncomeReportsEvent(currentUser, anoCalendario, count).catch(() => {});
+
     // Remove do estado local e localStorage imediatamente
     setIncomeReports(prev => {
       const filtered = prev.filter(r => r.anoCalendario !== anoCalendario);
@@ -1123,6 +1148,220 @@ export default function App() {
       console.warn('Erro ao sincronizar exclusão em lote no Firestore:', err);
     }
     showToast(`${count} comprovantes do Ano-Calendário ${anoCalendario} excluídos com sucesso.`);
+  };
+
+  // Exclusão individual de holerite
+  const handleDeleteReceipt = async (receipt: PayReceipt, employee?: Employee) => {
+    setReceipts(prev => {
+      const filtered = prev.filter(r => r.id !== receipt.id);
+      try { localStorage.setItem(STORAGE_KEY_RECEIPTS, JSON.stringify(filtered)); } catch (e) {}
+      fetch('/api/receipts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ receipts: filtered })
+      }).catch(() => {});
+      return filtered;
+    });
+
+    try {
+      await deleteReceiptFirestore(receipt.id);
+    } catch (e) {
+      console.warn('Erro ao excluir holerite no Firestore:', e);
+    }
+
+    recordDeleteReceiptEvent(currentUser, employee, receipt).catch(() => {});
+    showToast(`Holerite de ${employee?.nome || `Matrícula #${receipt.employeeCodigo}`} (${receipt.mesAno}) excluído com sucesso.`);
+  };
+
+  // Exclusão em lote de holerites por mês
+  const handleDeleteReceiptsByMonth = async (mesAno: string) => {
+    const toDelete = receipts.filter(r => r.mesAno === mesAno);
+    const count = toDelete.length;
+    if (count === 0) {
+      showToast(`Nenhum holerite encontrado no mês de ${mesAno}.`);
+      return;
+    }
+
+    setReceipts(prev => {
+      const filtered = prev.filter(r => r.mesAno !== mesAno);
+      try { localStorage.setItem(STORAGE_KEY_RECEIPTS, JSON.stringify(filtered)); } catch (e) {}
+      fetch('/api/receipts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ receipts: filtered })
+      }).catch(() => {});
+      return filtered;
+    });
+
+    try {
+      await deleteReceiptsBatchFirestore(toDelete.map(r => r.id));
+    } catch (e) {
+      console.warn('Erro ao excluir holerites no Firestore:', e);
+    }
+
+    recordBatchDeleteReceiptsEvent(currentUser, 'MES', mesAno, count).catch(() => {});
+    showToast(`${count} holerite(s) de ${mesAno} excluído(s) com sucesso.`);
+  };
+
+  // Exclusão em lote de holerites por ano
+  const handleDeleteReceiptsByYear = async (ano: string) => {
+    const toDelete = receipts.filter(
+      r => (r.mesAno && r.mesAno.includes(ano)) || (r.competencia && r.competencia.startsWith(ano))
+    );
+    const count = toDelete.length;
+    if (count === 0) {
+      showToast(`Nenhum holerite encontrado para o ano ${ano}.`);
+      return;
+    }
+
+    setReceipts(prev => {
+      const filtered = prev.filter(
+        r => !((r.mesAno && r.mesAno.includes(ano)) || (r.competencia && r.competencia.startsWith(ano)))
+      );
+      try { localStorage.setItem(STORAGE_KEY_RECEIPTS, JSON.stringify(filtered)); } catch (e) {}
+      fetch('/api/receipts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ receipts: filtered })
+      }).catch(() => {});
+      return filtered;
+    });
+
+    try {
+      await deleteReceiptsBatchFirestore(toDelete.map(r => r.id));
+    } catch (e) {
+      console.warn('Erro ao excluir holerites no Firestore:', e);
+    }
+
+    recordBatchDeleteReceiptsEvent(currentUser, 'ANO', ano, count).catch(() => {});
+    showToast(`${count} holerite(s) do ano ${ano} excluído(s) com sucesso.`);
+  };
+
+  // Bloqueio e Desbloqueio de Colaborador
+  const handleToggleBlockEmployee = async (employee: Employee, bloqueado: boolean, motivo?: string) => {
+    const updatedEmployee: Employee = {
+      ...employee,
+      bloqueado,
+      bloqueadoEm: bloqueado ? new Date().toISOString() : undefined,
+      motivoBloqueio: motivo
+    };
+
+    setEmployees(prev => {
+      const updated = prev.map(e => (e.codigo === employee.codigo ? updatedEmployee : e));
+      try { localStorage.setItem(STORAGE_KEY_EMPLOYEES, JSON.stringify(updated)); } catch (e) {}
+      fetch('/api/employees', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employees: updated })
+      }).catch(() => {});
+      return updated;
+    });
+
+    try {
+      await toggleEmployeeBlockFirestore(employee.codigo, bloqueado, motivo);
+    } catch (e) {
+      console.warn('Erro ao salvar status de bloqueio no Firestore:', e);
+    }
+
+    recordToggleEmployeeBlockEvent(currentUser, employee, bloqueado, motivo).catch(() => {});
+    showToast(`Colaborador ${employee.nome} foi ${bloqueado ? 'BLOQUEADO' : 'DESBLOQUEADO'} com sucesso!`);
+  };
+
+  // Exclusão de Colaborador em Cascata (exclui colaborador, holerites, IRPF e usuário)
+  const handleDeleteEmployeeWithCascade = async (employee: Employee) => {
+    const codigo = String(employee.codigo).trim();
+    const cleanCpf = employee.cpf ? employee.cpf.replace(/\D/g, '') : '';
+
+    // 1. Encontra e remove holerites vinculados
+    const receiptsToDelete = receipts.filter(r => String(r.employeeCodigo).trim() === codigo);
+    const recCount = receiptsToDelete.length;
+
+    setReceipts(prev => {
+      const filtered = prev.filter(r => String(r.employeeCodigo).trim() !== codigo);
+      try { localStorage.setItem(STORAGE_KEY_RECEIPTS, JSON.stringify(filtered)); } catch (e) {}
+      fetch('/api/receipts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ receipts: filtered })
+      }).catch(() => {});
+      return filtered;
+    });
+
+    if (recCount > 0) {
+      deleteReceiptsBatchFirestore(receiptsToDelete.map(r => r.id)).catch(() => {});
+    }
+
+    // 2. Encontra e remove comprovantes de IRPF vinculados
+    const irpfToDelete = incomeReports.filter(r => {
+      const bCod = String(r.beneficiario?.employeeCodigo || '').trim();
+      const bCpf = r.beneficiario?.cpf ? r.beneficiario.cpf.replace(/\D/g, '') : '';
+      if (bCod && bCod === codigo) return true;
+      if (cleanCpf && bCpf && cleanCpf === bCpf) return true;
+      return false;
+    });
+    const irpfCount = irpfToDelete.length;
+
+    setIncomeReports(prev => {
+      const filtered = prev.filter(r => {
+        const bCod = String(r.beneficiario?.employeeCodigo || '').trim();
+        const bCpf = r.beneficiario?.cpf ? r.beneficiario.cpf.replace(/\D/g, '') : '';
+        if (bCod && bCod === codigo) return false;
+        if (cleanCpf && bCpf && cleanCpf === bCpf) return false;
+        return true;
+      });
+      try { localStorage.setItem(STORAGE_KEY_INCOME_REPORTS, JSON.stringify(filtered)); } catch (e) {}
+      fetch('/api/income-reports', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reports: filtered })
+      }).catch(() => {});
+      return filtered;
+    });
+
+    if (irpfCount > 0) {
+      deleteIncomeReportsBatchFirestore(irpfToDelete.map(r => r.id)).catch(() => {});
+    }
+
+    // 3. Remove conta de usuário vinculado
+    let userToRemoveUid: string | null = null;
+    setUsers(prev => {
+      const user = prev.find(
+        u => u.role === 'COLABORADOR' && (u.employeeCodigo === codigo || (employee.email && u.email && u.email.toLowerCase() === employee.email.toLowerCase()))
+      );
+      if (user) {
+        userToRemoveUid = user.uid;
+      }
+      const filtered = prev.filter(u => u.uid !== userToRemoveUid);
+      try { localStorage.setItem(STORAGE_KEY_USERS, JSON.stringify(filtered)); } catch (e) {}
+      fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ users: filtered })
+      }).catch(() => {});
+      return filtered;
+    });
+
+    if (userToRemoveUid) {
+      deleteUserAccountFirestore(userToRemoveUid).catch(() => {});
+    }
+
+    // 4. Remove o colaborador
+    setEmployees(prev => {
+      const filtered = prev.filter(e => String(e.codigo).trim() !== codigo);
+      try { localStorage.setItem(STORAGE_KEY_EMPLOYEES, JSON.stringify(filtered)); } catch (e) {}
+      fetch('/api/employees', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employees: filtered })
+      }).catch(() => {});
+      return filtered;
+    });
+
+    deleteEmployeeFirestore(codigo).catch(() => {});
+
+    // 5. Registra log de auditoria
+    recordDeleteEmployeeCascadeEvent(currentUser, employee, recCount, irpfCount).catch(() => {});
+    showToast(`Colaborador ${employee.nome} excluído! ${recCount} holerite(s) e ${irpfCount} informe(s) IRPF apagados em cascata.`);
   };
 
   const handleLoginSuccess = (user: UserAccount, employee?: Employee) => {
@@ -1270,6 +1509,11 @@ export default function App() {
               onViewIncomeReport={(rep) => setViewingIncomeReport(rep)}
               onOpenSystemLogs={() => setIsSystemLogsOpen(true)}
               systemLogsCount={systemLogs.length}
+              onDeleteReceipt={handleDeleteReceipt}
+              onDeleteReceiptsByMonth={handleDeleteReceiptsByMonth}
+              onDeleteReceiptsByYear={handleDeleteReceiptsByYear}
+              onDeleteEmployee={handleDeleteEmployeeWithCascade}
+              onToggleBlockEmployee={handleToggleBlockEmployee}
             />
           )}
         </main>
@@ -1303,6 +1547,8 @@ export default function App() {
           onClose={() => setEditingEmployee(null)}
           employee={editingEmployee}
           onSave={handleSaveEmployee}
+          onDeleteEmployee={handleDeleteEmployeeWithCascade}
+          onToggleBlock={handleToggleBlockEmployee}
         />
       )}
 

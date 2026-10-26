@@ -501,7 +501,11 @@ export const SystemLogsModal: React.FC<SystemLogsModalProps> = ({
                             {/* Canal / Evento Badge */}
                             <span
                               className={`px-2 py-0.5 rounded-md font-bold uppercase ${
-                                log.canal === 'WHATSAPP' || log.tipoEvento.includes('WHATSAPP')
+                                log.tipoEvento?.startsWith('EXCLUSAO_')
+                                  ? 'bg-rose-100 text-rose-800'
+                                  : log.tipoEvento?.includes('BLOQUEIO')
+                                  ? 'bg-amber-100 text-amber-800'
+                                  : log.canal === 'WHATSAPP' || log.tipoEvento.includes('WHATSAPP')
                                   ? 'bg-emerald-100 text-emerald-800'
                                   : log.canal === 'EMAIL' || log.tipoEvento.includes('EMAIL')
                                   ? 'bg-blue-100 text-blue-800'

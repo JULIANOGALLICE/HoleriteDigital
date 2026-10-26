@@ -10,7 +10,11 @@ import {
   Building,
   Plus,
   Trash2,
-  Users
+  Users,
+  Lock,
+  Unlock,
+  AlertTriangle,
+  ShieldAlert
 } from 'lucide-react';
 
 interface EmployeeEditModalProps {
@@ -18,6 +22,8 @@ interface EmployeeEditModalProps {
   onClose: () => void;
   employee: Employee | null;
   onSave: (updated: Employee) => void;
+  onDeleteEmployee?: (employee: Employee) => void;
+  onToggleBlock?: (employee: Employee, bloqueado: boolean) => void;
 }
 
 function buildEmployeeFormData(emp: Employee | null): Employee {
@@ -30,6 +36,9 @@ function buildEmployeeFormData(emp: Employee | null): Employee {
     filial: emp?.filial || 'Matriz',
     salarioBase: emp?.salarioBase || 0,
     status: emp?.status || 'ATIVO',
+    bloqueado: emp?.bloqueado ?? false,
+    bloqueadoEm: emp?.bloqueadoEm || '',
+    motivoBloqueio: emp?.motivoBloqueio || '',
     cbo: emp?.cbo || '',
     dataAdmissao: emp?.dataAdmissao || '',
     email: emp?.email || '',
@@ -63,11 +72,14 @@ export const EmployeeEditModal: React.FC<EmployeeEditModalProps> = ({
   isOpen,
   onClose,
   employee,
-  onSave
+  onSave,
+  onDeleteEmployee,
+  onToggleBlock
 }) => {
   const [prevEmployee, setPrevEmployee] = useState<Employee | null>(employee);
   const [formData, setFormData] = useState<Employee>(() => buildEmployeeFormData(employee));
   const [activeTab, setActiveTab] = useState<'DADOS' | 'CONTATOS' | 'ENDERECO'>('DADOS');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   // Immediately synchronize during render if employee prop changed
   if (employee !== prevEmployee) {
@@ -178,6 +190,70 @@ export const EmployeeEditModal: React.FC<EmployeeEditModalProps> = ({
         <form onSubmit={handleSubmit} className="p-6 overflow-y-auto space-y-4 flex-1 text-xs">
           {activeTab === 'DADOS' && (
             <div className="space-y-4">
+              {/* Controle de Bloqueio de Acesso */}
+              <div className={`p-4 rounded-xl border transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 ${
+                formData.bloqueado
+                  ? 'bg-red-50 border-red-300 text-red-950'
+                  : 'bg-emerald-50/80 border-emerald-200 text-emerald-950'
+              }`}>
+                <div className="flex items-center gap-3">
+                  <div className={`p-2.5 rounded-xl ${
+                    formData.bloqueado ? 'bg-red-600 text-white' : 'bg-emerald-600 text-white'
+                  }`}>
+                    {formData.bloqueado ? <Lock className="w-5 h-5" /> : <Unlock className="w-5 h-5" />}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-xs uppercase tracking-wide">
+                        Acesso à Plataforma: {formData.bloqueado ? 'BLOQUEADO' : 'LIBERADO (ATIVO)'}
+                      </span>
+                      {formData.bloqueado && (
+                        <span className="px-2 py-0.5 text-[10px] bg-red-600 text-white font-bold rounded-full animate-pulse">
+                          Acesso Suspenso
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] opacity-75 mt-0.5">
+                      {formData.bloqueado
+                        ? 'O colaborador está proibido de entrar no sistema. Qualquer tentativa de login será rejeitada.'
+                        : 'O colaborador possui permissão para acessar o Portal do Colaborador normalmente.'}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = !formData.bloqueado;
+                    setFormData(prev => ({
+                      ...prev,
+                      bloqueado: next,
+                      bloqueadoEm: next ? new Date().toISOString() : undefined
+                    }));
+                    if (onToggleBlock && employee) {
+                      onToggleBlock(employee, next);
+                    }
+                  }}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer shrink-0 ${
+                    formData.bloqueado
+                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                      : 'bg-red-600 hover:bg-red-700 text-white'
+                  }`}
+                >
+                  {formData.bloqueado ? (
+                    <>
+                      <Unlock className="w-3.5 h-3.5" />
+                      Desbloquear Acesso
+                    </>
+                  ) : (
+                    <>
+                      <Lock className="w-3.5 h-3.5" />
+                      Bloquear Acesso
+                    </>
+                  )}
+                </button>
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-slate-700 font-semibold mb-1">Nome Completo</label>
@@ -531,14 +607,28 @@ export const EmployeeEditModal: React.FC<EmployeeEditModalProps> = ({
           )}
 
           {/* Footer Actions */}
-          <div className="p-4 bg-slate-50 border-t border-slate-200 -mx-6 -mb-6 mt-6 flex justify-between items-center">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 rounded-lg text-slate-600 hover:text-slate-900 font-medium text-xs hover:bg-slate-200 transition-colors"
-            >
-              Cancelar
-            </button>
+          <div className="p-4 bg-slate-50 border-t border-slate-200 -mx-6 -mb-6 mt-6 flex flex-wrap justify-between items-center gap-3">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 rounded-lg text-slate-600 hover:text-slate-900 font-medium text-xs hover:bg-slate-200 transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+
+              {onDeleteEmployee && employee && (
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="px-3.5 py-2 rounded-lg text-red-600 hover:text-red-700 hover:bg-red-50 border border-red-200 font-bold text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                  title="Excluir este colaborador e todos os seus holerites e comprovantes de IRPF em cascata"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Excluir Colaborador
+                </button>
+              )}
+            </div>
 
             <button
               type="submit"
@@ -550,6 +640,64 @@ export const EmployeeEditModal: React.FC<EmployeeEditModalProps> = ({
           </div>
         </form>
       </div>
+
+      {/* Modal de Confirmação de Exclusão em Cascata */}
+      {showDeleteConfirm && employee && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-red-200 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="p-3 bg-red-100 text-red-600 rounded-xl shrink-0">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900 text-base">
+                  Excluir Colaborador em Cascata?
+                </h3>
+                <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                  Você está prestes a excluir permanentemente <strong>{employee.nome}</strong> (matrícula <strong>#{employee.codigo}</strong>).
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3.5 bg-red-50 rounded-xl border border-red-200 text-xs text-red-900 space-y-2">
+              <p className="font-bold flex items-center gap-1.5 text-red-800">
+                <ShieldAlert className="w-4 h-4 text-red-600 shrink-0" />
+                Aviso de Exclusão Automática em Cascata:
+              </p>
+              <ul className="list-disc list-inside space-y-1 text-[11.5px] text-red-800/90 pl-1">
+                <li>Todos os <strong>holerites</strong> deste colaborador serão apagados.</li>
+                <li>Todos os <strong>comprovantes de IRPF</strong> vinculados serão apagados.</li>
+                <li>A conta de <strong>usuário</strong> e dados de acesso serão removidos.</li>
+              </ul>
+              <p className="font-bold text-[11px] text-red-700">Esta operação é irreversível!</p>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(false)}
+                className="px-4 py-2 rounded-xl text-slate-600 hover:text-slate-900 font-semibold text-xs hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDeleteConfirm(false);
+                  if (onDeleteEmployee) {
+                    onDeleteEmployee(employee);
+                  }
+                  onClose();
+                }}
+                className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-xl shadow-md transition-colors flex items-center gap-2 cursor-pointer"
+              >
+                <Trash2 className="w-4 h-4" />
+                Confirmar Exclusão em Cascata
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

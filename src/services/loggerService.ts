@@ -1,4 +1,4 @@
-import { SystemLog, SystemLogEventType, SystemLogCategory, Employee, PayReceipt, UserAccount } from '../types';
+import { SystemLog, SystemLogEventType, SystemLogCategory, Employee, PayReceipt, UserAccount, IncomeReport } from '../types';
 import { saveSystemLogFirestore } from './firestoreService';
 import { formatBRL } from '../utils/pdfGenerator';
 
@@ -300,6 +300,177 @@ export async function recordIncomeReportEvent(
       cpf: report.beneficiario.cpf,
       canal,
       destino: options?.destino
+    }
+  });
+}
+
+/**
+ * Registra exclusão individual de holerite
+ */
+export async function recordDeleteReceiptEvent(
+  manager: UserAccount | null,
+  emp: Employee | undefined,
+  receipt: PayReceipt
+): Promise<SystemLog> {
+  const nomeEmp = emp?.nome || `Colaborador #${receipt.employeeCodigo}`;
+  return recordSystemLog({
+    tipoEvento: 'EXCLUSAO_HOLERITE',
+    categoria: 'DOCUMENTO',
+    canal: 'PORTAL',
+    usuarioNome: manager?.nome || 'Gestor RH',
+    usuarioEmail: manager?.email,
+    usuarioMatricula: manager?.employeeCodigo,
+    usuarioRole: 'GESTOR',
+    descricao: `Holerite de ${receipt.mesAno} (Líquido: R$ ${formatBRL(receipt.valorLiquido)}) de ${nomeEmp} foi excluído do sistema`,
+    sucesso: true,
+    detalhes: {
+      receiptId: receipt.id,
+      employeeCodigo: receipt.employeeCodigo,
+      mesAno: receipt.mesAno,
+      valorLiquido: receipt.valorLiquido,
+      gestor: manager?.nome
+    }
+  });
+}
+
+/**
+ * Registra exclusão de holerites em lote (por mês ou por ano)
+ */
+export async function recordBatchDeleteReceiptsEvent(
+  manager: UserAccount | null,
+  type: 'MES' | 'ANO',
+  target: string,
+  count: number
+): Promise<SystemLog> {
+  const label = type === 'MES' ? `do mês de ${target}` : `do ano de ${target}`;
+  return recordSystemLog({
+    tipoEvento: 'EXCLUSAO_HOLERITE',
+    categoria: 'DOCUMENTO',
+    canal: 'PORTAL',
+    usuarioNome: manager?.nome || 'Gestor RH',
+    usuarioEmail: manager?.email,
+    usuarioMatricula: manager?.employeeCodigo,
+    usuarioRole: 'GESTOR',
+    descricao: `Exclusão em lote realizada: ${count} holerite(s) ${label} foram removidos permanentemente`,
+    sucesso: true,
+    detalhes: {
+      tipoLote: type,
+      alvo: target,
+      quantidadeExcluida: count,
+      gestor: manager?.nome
+    }
+  });
+}
+
+/**
+ * Registra exclusão individual de informe de rendimentos IRPF
+ */
+export async function recordDeleteIncomeReportEvent(
+  manager: UserAccount | null,
+  report: IncomeReport
+): Promise<SystemLog> {
+  return recordSystemLog({
+    tipoEvento: 'EXCLUSAO_IRPF',
+    categoria: 'DOCUMENTO',
+    canal: 'PORTAL',
+    usuarioNome: manager?.nome || 'Gestor RH',
+    usuarioEmail: manager?.email,
+    usuarioMatricula: manager?.employeeCodigo,
+    usuarioRole: 'GESTOR',
+    descricao: `Comprovante de Rendimentos IRPF (${report.anoCalendario}) de ${report.beneficiario.nomeCompleto} foi excluído`,
+    sucesso: true,
+    detalhes: {
+      reportId: report.id,
+      anoCalendario: report.anoCalendario,
+      cpf: report.beneficiario.cpf,
+      gestor: manager?.nome
+    }
+  });
+}
+
+/**
+ * Registra exclusão em lote de informes de IRPF por ano-calendário
+ */
+export async function recordBatchDeleteIncomeReportsEvent(
+  manager: UserAccount | null,
+  anoCalendario: string,
+  count: number
+): Promise<SystemLog> {
+  return recordSystemLog({
+    tipoEvento: 'EXCLUSAO_IRPF',
+    categoria: 'DOCUMENTO',
+    canal: 'PORTAL',
+    usuarioNome: manager?.nome || 'Gestor RH',
+    usuarioEmail: manager?.email,
+    usuarioMatricula: manager?.employeeCodigo,
+    usuarioRole: 'GESTOR',
+    descricao: `Exclusão anual de IRPF: ${count} comprovante(s) do Ano-Calendário ${anoCalendario} foram removidos`,
+    sucesso: true,
+    detalhes: {
+      anoCalendario,
+      quantidadeExcluida: count,
+      gestor: manager?.nome
+    }
+  });
+}
+
+/**
+ * Registra exclusão de colaborador em cascata (remove holerites e IRPF)
+ */
+export async function recordDeleteEmployeeCascadeEvent(
+  manager: UserAccount | null,
+  emp: Employee,
+  receiptsCount: number,
+  irpfCount: number
+): Promise<SystemLog> {
+  return recordSystemLog({
+    tipoEvento: 'EXCLUSAO_COLABORADOR',
+    categoria: 'SISTEMA',
+    canal: 'PORTAL',
+    usuarioNome: manager?.nome || 'Gestor RH',
+    usuarioEmail: manager?.email,
+    usuarioMatricula: manager?.employeeCodigo,
+    usuarioRole: 'GESTOR',
+    descricao: `Colaborador ${emp.nome} (#${emp.codigo}) foi excluído com limpeza em cascata de ${receiptsCount} holerite(s) e ${irpfCount} comprovante(s) de IRPF`,
+    sucesso: true,
+    detalhes: {
+      employeeCodigo: emp.codigo,
+      employeeNome: emp.nome,
+      cpf: emp.cpf,
+      receiptsCount,
+      irpfCount,
+      gestor: manager?.nome
+    }
+  });
+}
+
+/**
+ * Registra bloqueio ou desbloqueio de acesso do colaborador
+ */
+export async function recordToggleEmployeeBlockEvent(
+  manager: UserAccount | null,
+  emp: Employee,
+  bloqueado: boolean,
+  motivo?: string
+): Promise<SystemLog> {
+  return recordSystemLog({
+    tipoEvento: bloqueado ? 'BLOQUEIO_COLABORADOR' : 'DESBLOQUEIO_COLABORADOR',
+    categoria: 'SISTEMA',
+    canal: 'PORTAL',
+    usuarioNome: manager?.nome || 'Gestor RH',
+    usuarioEmail: manager?.email,
+    usuarioMatricula: manager?.employeeCodigo,
+    usuarioRole: 'GESTOR',
+    descricao: bloqueado
+      ? `Acesso à plataforma BLOQUEADO para ${emp.nome} (#${emp.codigo})${motivo ? ` - Motivo: ${motivo}` : ''}`
+      : `Acesso à plataforma DESBLOQUEADO para ${emp.nome} (#${emp.codigo})`,
+    sucesso: true,
+    detalhes: {
+      employeeCodigo: emp.codigo,
+      employeeNome: emp.nome,
+      bloqueado,
+      motivo,
+      gestor: manager?.nome
     }
   });
 }
