@@ -5,7 +5,7 @@ import { MedicalCertificateUploadModal } from './MedicalCertificateUploadModal';
 import { MedicalCertificateViewModal } from './MedicalCertificateViewModal';
 import { MandatoryRegistrationModal } from './MandatoryRegistrationModal';
 import { formatBRL, downloadPayReceiptPDF } from '../utils/pdfGenerator';
-import { formatCurrencyBRL, generateIncomeReportPdf } from '../utils/incomeReportPdfGenerator';
+import { formatCurrencyBRL, generateIncomeReportPdf, getEmployeeIncomeReports } from '../utils/incomeReportPdfGenerator';
 import {
   Calendar,
   CreditCard,
@@ -79,34 +79,8 @@ export const EmployeePortal: React.FC<EmployeePortalProps> = ({
     c => c.employeeCodigo === employee.codigo
   );
 
-  // Filter income reports for this employee (matching by code, CPF or normalized name)
-  const normalizeText = (s?: string) => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
-  const cleanDigitsOnly = (s?: string) => (s || '').replace(/\D/g, '');
-
-  const myIncomeReports = incomeReports.filter(r => {
-    // 1. Direct code matching
-    if (r.beneficiario.employeeCodigo && employee.codigo) {
-      if (r.beneficiario.employeeCodigo === employee.codigo) return true;
-      const codeA = parseInt(r.beneficiario.employeeCodigo, 10);
-      const codeB = parseInt(employee.codigo, 10);
-      if (!isNaN(codeA) && !isNaN(codeB) && codeA === codeB) return true;
-    }
-    // 2. CPF matching
-    if (employee.cpf && r.beneficiario.cpf) {
-      const cleanEmpCpf = cleanDigitsOnly(employee.cpf);
-      const cleanRepCpf = cleanDigitsOnly(r.beneficiario.cpf);
-      if (cleanEmpCpf && cleanRepCpf && cleanEmpCpf === cleanRepCpf) return true;
-    }
-    // 3. Name matching (crucial for PDF split by user name)
-    if (employee.nome && r.beneficiario.nomeCompleto) {
-      const nameEmp = normalizeText(employee.nome);
-      const nameRep = normalizeText(r.beneficiario.nomeCompleto);
-      if (nameEmp && nameRep && (nameEmp === nameRep || nameEmp.includes(nameRep) || nameRep.includes(nameEmp))) {
-        return true;
-      }
-    }
-    return false;
-  });
+  // Filter income reports for this employee (shared helper with Gestor portal)
+  const myIncomeReports = getEmployeeIncomeReports(employee, incomeReports);
 
   const [selectedReceiptId, setSelectedReceiptId] = useState<string>(
     employeeReceipts[0]?.id || ''

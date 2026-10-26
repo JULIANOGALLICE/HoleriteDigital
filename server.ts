@@ -200,6 +200,7 @@ const USERS_FILE = path.resolve(__dirname, 'users-data.json');
 const EMPLOYEES_FILE = path.resolve(__dirname, 'employees-data.json');
 const RECEIPTS_FILE = path.resolve(__dirname, 'receipts-data.json');
 const SYSTEM_LOGS_FILE = path.resolve(__dirname, 'system-logs-data.json');
+const INCOME_REPORTS_FILE = path.resolve(__dirname, 'income-reports-data.json');
 
 // 0. API: Get & Save System Configuration (Permanent Server-Side Storage)
 app.get('/api/config', (_req, res) => {
@@ -349,6 +350,34 @@ app.post('/api/system-logs', (req, res) => {
     return res.json({ success: true, message: 'Log gravado com sucesso no servidor.' });
   } catch (err: any) {
     console.error('Error writing system-logs-data.json:', err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// API: Servidor permanente de Comprovantes de Rendimentos IRPF
+app.get('/api/income-reports', (_req, res) => {
+  try {
+    if (fs.existsSync(INCOME_REPORTS_FILE)) {
+      const content = fs.readFileSync(INCOME_REPORTS_FILE, 'utf-8');
+      const data = JSON.parse(content);
+      return res.json({ success: true, reports: Array.isArray(data) ? data : [] });
+    }
+  } catch (err: any) {
+    console.error('Error reading income-reports-data.json:', err);
+  }
+  return res.json({ success: true, reports: [] });
+});
+
+app.post('/api/income-reports', (req, res) => {
+  try {
+    const { reports } = req.body;
+    if (Array.isArray(reports)) {
+      fs.writeFileSync(INCOME_REPORTS_FILE, JSON.stringify(reports, null, 2), 'utf-8');
+      return res.json({ success: true, message: 'Comprovantes de rendimentos gravados com sucesso no servidor.' });
+    }
+    return res.status(400).json({ success: false, message: 'Array de comprovantes inválido.' });
+  } catch (err: any) {
+    console.error('Error writing income-reports-data.json:', err);
     return res.status(500).json({ success: false, message: err.message });
   }
 });

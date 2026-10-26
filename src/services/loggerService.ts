@@ -252,6 +252,59 @@ export async function recordSpreadsheetImportEvent(
 }
 
 /**
+ * Registra envio ou disponibilização de Comprovante de Rendimentos (IRPF)
+ */
+export async function recordIncomeReportEvent(
+  report: {
+    id: string;
+    anoCalendario: string;
+    exercicio: string;
+    beneficiario: {
+      nomeCompleto: string;
+      cpf: string;
+      employeeCodigo: string;
+    };
+  },
+  emp?: Employee,
+  options?: {
+    canal?: 'PORTAL' | 'WHATSAPP' | 'EMAIL';
+    sucesso?: boolean;
+    errorMsg?: string;
+    destino?: string;
+  }
+): Promise<SystemLog> {
+  const canal = options?.canal || 'PORTAL';
+  const sucesso = options?.sucesso ?? true;
+  const nome = emp?.nome || report.beneficiario.nomeCompleto;
+  const matricula = emp?.codigo || report.beneficiario.employeeCodigo;
+
+  return recordSystemLog({
+    tipoEvento: 'ENVIO_COMPROVANTE_IRPF',
+    categoria: canal === 'PORTAL' ? 'DOCUMENTO' : 'COMUNICACAO',
+    canal,
+    usuarioNome: nome,
+    usuarioEmail: emp?.email,
+    usuarioMatricula: matricula,
+    usuarioRole: 'COLABORADOR',
+    descricao: sucesso
+      ? canal === 'PORTAL'
+        ? `Comprovante de Rendimentos IRPF (Ano-Calendário ${report.anoCalendario} / Exercício ${report.exercicio}) enviado e disponibilizado no Portal do Colaborador`
+        : `Comprovante de Rendimentos IRPF (Ano-Calendário ${report.anoCalendario} / Exercício ${report.exercicio}) enviado via ${canal} para ${options?.destino || nome}`
+      : `Falha ao enviar Comprovante de Rendimentos IRPF (${report.anoCalendario}) via ${canal}: ${options?.errorMsg || 'Erro'}`,
+    sucesso,
+    mensagemErro: options?.errorMsg,
+    detalhes: {
+      reportId: report.id,
+      anoCalendario: report.anoCalendario,
+      exercicio: report.exercicio,
+      cpf: report.beneficiario.cpf,
+      canal,
+      destino: options?.destino
+    }
+  });
+}
+
+/**
  * Amostra de histórico inicial para demonstração caso o banco de logs esteja zerado
  */
 export function getInitialSampleLogs(): SystemLog[] {

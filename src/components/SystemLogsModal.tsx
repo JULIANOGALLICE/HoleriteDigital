@@ -109,6 +109,8 @@ export const SystemLogsModal: React.FC<SystemLogsModalProps> = ({
           if (log.categoria !== 'LOGIN') return false;
         } else if (selectedCategory === 'ASSINATURA') {
           if (log.categoria !== 'ASSINATURA') return false;
+        } else if (selectedCategory === 'IRPF') {
+          if (log.tipoEvento !== 'ENVIO_COMPROVANTE_IRPF' && log.categoria !== 'DOCUMENTO') return false;
         } else if (selectedCategory === 'SISTEMA') {
           if (log.categoria !== 'SISTEMA') return false;
         }
@@ -340,6 +342,7 @@ export const SystemLogsModal: React.FC<SystemLogsModalProps> = ({
                 <option value="EMAIL">✉️ Apenas E-mails</option>
                 <option value="LOGIN">🔐 Acessos / Logins & 2FA</option>
                 <option value="ASSINATURA">✍️ Assinaturas de Holerite (CLT 464)</option>
+                <option value="IRPF">📄 Comprovantes de Rendimentos (IRPF)</option>
                 <option value="SISTEMA">⚙️ Operações do Sistema & Planilhas XLS</option>
               </select>
             </div>

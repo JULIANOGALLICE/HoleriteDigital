@@ -426,6 +426,15 @@ export async function clearAllDatabaseData(): Promise<void> {
     for (const d of certSnap.docs) {
       await deleteDoc(d.ref);
     }
+    const irpfSnap = await getDocs(collection(db, 'incomeReports'));
+    for (const d of irpfSnap.docs) {
+      await deleteDoc(d.ref);
+    }
+    fetch('/api/income-reports', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reports: [] })
+    }).catch(() => {});
   } catch (e) {
     console.error(e);
   }
@@ -575,7 +584,25 @@ export async function deleteMedicalCertificateFirestore(id: string): Promise<voi
 
 export async function saveIncomeReportFirestore(report: IncomeReport): Promise<void> {
   const reportId = report.id || `irpf-${report.beneficiario.employeeCodigo}-${report.anoCalendario}`;
-  const data = cleanUndefined({ ...report, id: reportId });
+  const safeReport: IncomeReport = {
+    ...report,
+    id: reportId,
+    enviadoEm: report.enviadoEm || new Date().toISOString(),
+    canalEnvio: report.canalEnvio || 'PORTAL'
+  };
+
+  // Prevent Firestore 1MiB document limit failure if embedded PDF base64 is too large
+  if (
+    safeReport.arquivoPdfOriginal?.base64 &&
+    safeReport.arquivoPdfOriginal.base64.length > MAX_SINGLE_DOC_BASE64_LENGTH
+  ) {
+    safeReport.arquivoPdfOriginal = {
+      ...safeReport.arquivoPdfOriginal,
+      base64: `/api/income-reports/${reportId}/pdf`
+    };
+  }
+
+  const data = cleanUndefined(safeReport);
   try {
     await setDoc(doc(db, 'incomeReports', reportId), data, { merge: true });
   } catch (error) {

@@ -41,17 +41,10 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   systemConfig
 }) => {
   const [step, setStep] = useState<'CREDENTIALS' | '2FA'>('CREDENTIALS');
-  const [loginRole, setLoginRole] = useState<'COLABORADOR' | 'GESTOR'>('COLABORADOR');
-
-  // Credentials for Gestor
-  const [gestorEmail, setGestorEmail] = useState('');
-  const [gestorPassword, setGestorPassword] = useState('');
-  const [showGestorPassword, setShowGestorPassword] = useState(false);
-
-  // Credentials for Colaborador
-  const [colabIdentifier, setColabIdentifier] = useState('');
-  const [colabPassword, setColabPassword] = useState('');
-  const [showColabPassword, setShowColabPassword] = useState(false);
+  // Unified Credentials State
+  const [identifier, setIdentifier] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -189,108 +182,19 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     }
   };
 
-  const handleGestorSubmit = (e: React.FormEvent) => {
+  /**
+   * Autenticação unificada: identifica automaticamente se o usuário é COLABORADOR ou GESTOR
+   * pelo cadastro interno do sistema e direciona para o ambiente correspondente.
+   */
+  const handleUnifiedLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
 
-    const cleanEmail = gestorEmail.trim().replace(/\u00A0/g, ' ').toLowerCase();
-    const cleanPassword = gestorPassword.trim();
-
-    // 1. Check if user is in users database as GESTOR
-    const existingGestor = users.find(u => u.email.toLowerCase() === cleanEmail && u.role === 'GESTOR');
-    if (existingGestor) {
-      const storedPass = String(existingGestor.senha || '').trim();
-      if (storedPass && storedPass !== cleanPassword && existingGestor.senha !== gestorPassword) {
-        setErrorMessage('Senha incorreta para o gestor informado.');
-        recordLoginEvent(existingGestor, undefined, {
-          is2FA: false,
-          success: false,
-          errorMsg: 'Senha incorreta para gestor'
-        }).catch(() => {});
-        return;
-      }
-
-      if (systemConfig?.exigir2FALogin) {
-        trigger2FALogin(existingGestor);
-        return;
-      }
-
-      confetti({ particleCount: 70, spread: 60, origin: { y: 0.6 } });
-      onLoginSuccess(existingGestor);
-      if (onClose) onClose();
-      return;
-    }
-
-    // 2. Default Master Gestor julianogallice@gmail.com check
-    if (cleanEmail === 'julianogallice@gmail.com') {
-      if (cleanPassword !== '@Def18441' && cleanPassword !== 'Def18441' && cleanPassword.length < 4) {
-        setErrorMessage('Senha incorreta para o gestor julianogallice@gmail.com.');
-        return;
-      }
-
-      const matchedMasterEmp = employees.find(
-        emp =>
-          (emp.email && emp.email.toLowerCase() === cleanEmail) ||
-          emp.nome.toLowerCase().includes('juliano')
-      );
-
-      const masterUser: UserAccount = {
-        uid: 'gestor-juliano-master',
-        email: cleanEmail,
-        role: 'GESTOR',
-        employeeCodigo: matchedMasterEmp?.codigo,
-        nome: 'Juliano César Gallice',
-        criadoEm: new Date().toISOString()
-      };
-
-      if (systemConfig?.exigir2FALogin) {
-        trigger2FALogin(masterUser);
-        return;
-      }
-
-      confetti({ particleCount: 70, spread: 60, origin: { y: 0.6 } });
-      onLoginSuccess(masterUser);
-      if (onClose) onClose();
-      return;
-    }
-
-    // 3. Any other registered user that might be a gestor
-    const anyUser = users.find(u => u.email.toLowerCase() === cleanEmail);
-    if (anyUser) {
-      if (anyUser.role !== 'GESTOR') {
-        setErrorMessage('Este e-mail pertence a um Colaborador. Selecione "Portal do Colaborador" acima.');
-        return;
-      }
-      const storedPass = String(anyUser.senha || '').trim();
-      if (storedPass && storedPass !== cleanPassword && anyUser.senha !== gestorPassword) {
-        setErrorMessage('Senha incorreta.');
-        return;
-      }
-
-      if (systemConfig?.exigir2FALogin) {
-        trigger2FALogin(anyUser);
-        return;
-      }
-
-      confetti({ particleCount: 70, spread: 60, origin: { y: 0.6 } });
-      onLoginSuccess(anyUser);
-      if (onClose) onClose();
-      return;
-    }
-
-    setErrorMessage('Gestor não localizado com este e-mail. Solicite ao administrador a criação do seu acesso.');
-  };
-
-  const handleColaboradorSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMessage(null);
-
-    // Clean input removing mobile invisible chars and whitespace
-    const cleanInput = colabIdentifier.trim().replace(/\u00A0/g, ' ').toLowerCase();
+    const cleanInput = identifier.trim().replace(/\u00A0/g, ' ').toLowerCase();
     const cleanDigits = cleanInput.replace(/\D/g, '');
-    const cleanPassword = colabPassword.trim();
+    const cleanPassword = password.trim();
 
-    // 1. Find employee by codigo, email, or cpf
+    // 1. Localizar colaborador correspondente (por matrícula, e-mail ou CPF)
     const emp = employees.find(e => {
       const eCod = String(e.codigo || '').trim().toLowerCase();
       const eCodDigits = eCod.replace(/\D/g, '');
@@ -304,21 +208,17 @@ export const LoginModal: React.FC<LoginModalProps> = ({
       return false;
     });
 
-    // 2. Check if there is a corresponding UserAccount
+    // 2. Localizar conta de usuário (GESTOR ou COLABORADOR)
     const userAcc = users.find(u => {
-      if (u.role !== 'COLABORADOR') return false;
-
       const uEmail = String(u.email || '').trim().toLowerCase();
       const uCod = String(u.employeeCodigo || '').trim().toLowerCase();
       const uCodDigits = uCod.replace(/\D/g, '');
       const uNome = String(u.nome || '').trim().toLowerCase();
 
-      // Direct match by email or employee code typed
       if (uEmail && uEmail === cleanInput) return true;
       if (uCod && uCod === cleanInput) return true;
       if (cleanDigits && uCodDigits && uCodDigits === cleanDigits) return true;
 
-      // Link via found employee
       if (emp) {
         const empCod = String(emp.codigo || '').trim().toLowerCase();
         const empCodDigits = empCod.replace(/\D/g, '');
@@ -335,43 +235,85 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     });
 
     if (userAcc) {
-      if (!userAcc.senha || userAcc.senha.trim() === '') {
+      const linkedEmp =
+        emp ||
+        employees.find(e => {
+          if (userAcc.employeeCodigo && String(e.codigo).trim() === String(userAcc.employeeCodigo).trim()) return true;
+          if (userAcc.email && e.email && e.email.trim().toLowerCase() === userAcc.email.trim().toLowerCase()) return true;
+          return false;
+        });
+
+      const storedPass = String(userAcc.senha || '').trim();
+
+      if (userAcc.role === 'COLABORADOR' && !storedPass) {
         setErrorMessage(
-          `Olá, ${emp?.nome || userAcc.nome}! Seu cadastro foi importado com sucesso, porém o Gestor do RH ainda não cadastrou sua senha inicial de acesso. Solicite a liberação ao RH.`
+          `Olá, ${linkedEmp?.nome || userAcc.nome}! Seu cadastro foi importado com sucesso, porém o Gestor do RH ainda não cadastrou sua senha inicial de acesso. Solicite a liberação ao RH.`
         );
         return;
       }
 
-      const storedPass = String(userAcc.senha || '').trim();
-      if (storedPass !== cleanPassword && userAcc.senha !== colabPassword) {
-        setErrorMessage('Senha de acesso individual incorreta. Digite a senha inicial fornecida pelo RH ou solicite a redefinição.');
-        recordLoginEvent(userAcc, emp, {
+      if (storedPass && storedPass !== cleanPassword && userAcc.senha !== password) {
+        setErrorMessage('Senha incorreta. Verifique sua senha de acesso ou solicite a redefinição ao RH.');
+        recordLoginEvent(userAcc, linkedEmp, {
           is2FA: false,
           success: false,
-          errorMsg: 'Senha incorreta para colaborador'
+          errorMsg: `Senha incorreta (${userAcc.role === 'GESTOR' ? 'gestor' : 'colaborador'})`
         }).catch(() => {});
         return;
       }
 
       if (systemConfig?.exigir2FALogin) {
-        trigger2FALogin(userAcc, emp);
+        trigger2FALogin(userAcc, linkedEmp);
         return;
       }
 
-      confetti({ particleCount: 60, spread: 50, origin: { y: 0.6 } });
-      onLoginSuccess(userAcc, emp);
+      confetti({ particleCount: 70, spread: 60, origin: { y: 0.6 } });
+      onLoginSuccess(userAcc, linkedEmp);
       if (onClose) onClose();
       return;
     }
 
-    if (!emp) {
-      setErrorMessage('Colaborador não localizado com a matrícula, e-mail ou CPF informado.');
+    // 3. Fallback para o Gestor Master padrão caso ainda não sincronizado na coleção users
+    if (cleanInput === 'julianogallice@gmail.com') {
+      if (cleanPassword !== '@Def18441' && cleanPassword !== 'Def18441' && cleanPassword.length < 4) {
+        setErrorMessage('Senha incorreta para o gestor julianogallice@gmail.com.');
+        return;
+      }
+
+      const matchedMasterEmp = employees.find(
+        e =>
+          (e.email && e.email.toLowerCase() === cleanInput) ||
+          e.nome.toLowerCase().includes('juliano')
+      );
+
+      const masterUser: UserAccount = {
+        uid: 'gestor-juliano-master',
+        email: cleanInput,
+        role: 'GESTOR',
+        employeeCodigo: matchedMasterEmp?.codigo,
+        nome: 'Juliano César Gallice',
+        criadoEm: new Date().toISOString()
+      };
+
+      if (systemConfig?.exigir2FALogin) {
+        trigger2FALogin(masterUser, matchedMasterEmp);
+        return;
+      }
+
+      confetti({ particleCount: 70, spread: 60, origin: { y: 0.6 } });
+      onLoginSuccess(masterUser, matchedMasterEmp);
+      if (onClose) onClose();
       return;
     }
 
-    setErrorMessage(
-      `Olá, ${emp.nome}! O seu acesso ainda não foi configurado pelo Gestor do RH. Solicite o cadastro do seu e-mail e senha inicial ao Gestor.`
-    );
+    if (emp) {
+      setErrorMessage(
+        `Olá, ${emp.nome}! O seu acesso ainda não foi configurado pelo Gestor do RH. Solicite o cadastro do seu e-mail e senha inicial ao Gestor.`
+      );
+      return;
+    }
+
+    setErrorMessage('Usuário não localizado com a matrícula, CPF ou e-mail informado.');
   };
 
   const containerClasses = isFullScreen
@@ -395,7 +337,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
           <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-white p-1.5 mx-auto mb-3 shadow-xl ring-4 ring-white/10 flex items-center justify-center overflow-hidden">
             <img
               src={logoHolerite}
-              alt="Holerite - Portal do Colaborador"
+              alt="Holerite - Portal de Acesso"
               className="w-full h-full object-contain"
             />
           </div>
@@ -408,181 +350,76 @@ export const LoginModal: React.FC<LoginModalProps> = ({
           </p>
         </div>
 
-        {/* STEP 1: CREDENTIALS */}
+        {/* STEP 1: CREDENTIALS (UNIFICADO) */}
         {step === 'CREDENTIALS' && (
-          <>
-            {/* Role Tabs: Colaborador Default First */}
-            <div className="grid grid-cols-2 bg-slate-100 p-1.5 border-b border-slate-200 text-xs font-bold">
-              <button
-                type="button"
-                onClick={() => {
-                  setLoginRole('COLABORADOR');
-                  setErrorMessage(null);
-                }}
-                className={`py-2.5 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                  loginRole === 'COLABORADOR'
-                    ? 'bg-white text-blue-900 shadow-xs font-extrabold'
-                    : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                <User className="w-4 h-4 text-blue-600" /> Portal do Colaborador
-              </button>
+          <div className="p-6 space-y-4 text-xs">
+            <form onSubmit={handleUnifiedLoginSubmit} className="space-y-4">
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-[11px] text-slate-700 leading-relaxed">
+                Informe suas credenciais de acesso. O sistema identificará automaticamente seu perfil (<strong>Colaborador</strong> ou <strong>Gestor</strong>) e direcionará para o seu ambiente.
+              </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setLoginRole('GESTOR');
-                  setErrorMessage(null);
-                }}
-                className={`py-2.5 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                  loginRole === 'GESTOR'
-                    ? 'bg-white text-blue-900 shadow-xs font-extrabold'
-                    : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                <Shield className="w-4 h-4 text-blue-600" /> Acesso do Gestor / RH
-              </button>
-            </div>
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">
+                  Matrícula, CPF ou E-mail
+                </label>
+                <input
+                  type="text"
+                  value={identifier}
+                  onChange={(e) => setIdentifier(e.target.value)}
+                  placeholder="Digite sua matrícula, CPF ou e-mail"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  autoComplete="username"
+                  className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  required
+                />
+              </div>
 
-            {/* Content Body */}
-            <div className="p-6 space-y-4 text-xs">
-              {loginRole === 'COLABORADOR' ? (
-                /* Colaborador Login Form */
-                <form onSubmit={handleColaboradorSubmit} className="space-y-4">
-                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-[11px] text-slate-700">
-                    Acesse seus recibos de pagamento, informes de rendimentos e realize sua assinatura digital com validação 2FA.
-                  </div>
-
-                  <div>
-                    <label className="block text-slate-700 font-semibold mb-1">
-                      Matrícula, CPF ou E-mail
-                    </label>
-                    <input
-                      type="text"
-                      value={colabIdentifier}
-                      onChange={(e) => setColabIdentifier(e.target.value)}
-                      placeholder="Digite sua matrícula, CPF ou e-mail"
-                      autoCapitalize="none"
-                      autoCorrect="off"
-                      spellCheck={false}
-                      autoComplete="username"
-                      className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-slate-700 font-semibold mb-1">
-                      Senha Individual
-                    </label>
-                    <div className="relative">
-                      <input
-                        type={showColabPassword ? "text" : "password"}
-                        value={colabPassword}
-                        onChange={(e) => setColabPassword(e.target.value)}
-                        placeholder="••••••••"
-                        autoCapitalize="none"
-                        autoCorrect="off"
-                        spellCheck={false}
-                        autoComplete="current-password"
-                        className="w-full pl-3 pr-10 py-2.5 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                        required
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowColabPassword(!showColabPassword)}
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
-                        tabIndex={-1}
-                      >
-                        {showColabPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
-                  </div>
-
-                  {errorMessage && (
-                    <div className="p-2.5 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 text-[11px] flex items-center gap-1.5">
-                      <AlertCircle className="w-4 h-4 shrink-0" /> {errorMessage}
-                    </div>
-                  )}
-
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">
+                  Senha de Acesso
+                </label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    autoComplete="current-password"
+                    className="w-full pl-3 pr-10 py-2.5 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    required
+                  />
                   <button
-                    type="submit"
-                    className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer text-xs"
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
+                    tabIndex={-1}
                   >
-                    <LogIn className="w-4 h-4" />
-                    Acessar Portal do Colaborador
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
-                </form>
-              ) : (
-                /* Gestor Login Form */
-                <form onSubmit={handleGestorSubmit} className="space-y-4">
-                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-[11px] text-slate-700">
-                    Acesso restrito aos responsáveis pelo Departamento Pessoal e Administração.
-                  </div>
+                </div>
+              </div>
 
-                  <div>
-                    <label className="block text-slate-700 font-semibold mb-1">
-                      E-mail Corporativo
-                    </label>
-                    <input
-                      type="email"
-                      value={gestorEmail}
-                      onChange={(e) => setGestorEmail(e.target.value)}
-                      placeholder="Informe seu e-mail administrativo"
-                      autoCapitalize="none"
-                      autoCorrect="off"
-                      spellCheck={false}
-                      autoComplete="email"
-                      className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-slate-700 font-semibold mb-1">
-                      Senha de Acesso
-                    </label>
-                    <div className="relative">
-                      <input
-                        type={showGestorPassword ? "text" : "password"}
-                        value={gestorPassword}
-                        onChange={(e) => setGestorPassword(e.target.value)}
-                        placeholder="••••••••"
-                        autoCapitalize="none"
-                        autoCorrect="off"
-                        spellCheck={false}
-                        autoComplete="current-password"
-                        className="w-full pl-3 pr-10 py-2.5 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                        required
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowGestorPassword(!showGestorPassword)}
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
-                        tabIndex={-1}
-                      >
-                        {showGestorPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
-                  </div>
-
-                  {errorMessage && (
-                    <div className="p-2.5 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 text-[11px] flex items-center gap-1.5">
-                      <AlertCircle className="w-4 h-4 shrink-0" /> {errorMessage}
-                    </div>
-                  )}
-
-                  <button
-                    type="submit"
-                    className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer text-xs"
-                  >
-                    <LogIn className="w-4 h-4 text-blue-400" />
-                    Entrar no Painel do Gestor
-                  </button>
-                </form>
+              {errorMessage && (
+                <div className="p-2.5 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 text-[11px] flex items-center gap-1.5">
+                  <AlertCircle className="w-4 h-4 shrink-0" /> {errorMessage}
+                </div>
               )}
-            </div>
-          </>
+
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer text-xs"
+              >
+                <LogIn className="w-4 h-4" />
+                Entrar no Sistema
+              </button>
+            </form>
+          </div>
         )}
 
         {/* STEP 2: DUPLA AUTENTICAÇÃO (2FA) */}

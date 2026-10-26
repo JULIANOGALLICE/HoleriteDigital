@@ -280,6 +280,8 @@ export interface IncomeReport {
   };
 
   criadoEm: string;
+  enviadoEm?: string;
+  canalEnvio?: 'PORTAL' | 'WHATSAPP' | 'EMAIL';
 }
 
 export type SystemLogEventType =
@@ -294,6 +296,7 @@ export type SystemLogEventType =
   | 'ASSINATURA_HOLERITE'
   | 'ENVIO_ATESTADO'
   | 'ANALISE_ATESTADO'
+  | 'ENVIO_COMPROVANTE_IRPF'
   | 'IMPORTACAO_PLANILHA'
   | 'IMPORTACAO_HOLERITE'
   | 'CONFIGURACAO_SISTEMA';

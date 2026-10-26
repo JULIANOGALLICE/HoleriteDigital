@@ -57,6 +57,7 @@ import {
   recordSignatureEvent,
   recordEmailDispatchEvent,
   recordSpreadsheetImportEvent,
+  recordIncomeReportEvent,
   getInitialSampleLogs
 } from './services/loggerService';
 import { CheckCircle2, ShieldCheck } from 'lucide-react';
@@ -66,6 +67,7 @@ const STORAGE_KEY_USER = 'holerite_user_v2';
 const STORAGE_KEY_EMPLOYEES = 'holerite_employees_v2';
 const STORAGE_KEY_RECEIPTS = 'holerite_receipts_v2';
 const STORAGE_KEY_USERS = 'holerite_users_v2';
+const STORAGE_KEY_INCOME_REPORTS = 'holerite_income_reports_v2';
 
 export default function App() {
   // Current user account session: Starts as null so the initial screen shows the Login Screen
@@ -144,10 +146,12 @@ export default function App() {
   // Income Reports (Comprovante de Rendimentos IRPF) state (synced with Firestore)
   const [incomeReports, setIncomeReports] = useState<IncomeReport[]>(() => {
     try {
-      const saved = localStorage.getItem('holerite_income_reports_v1');
+      // Remove legacy v1 cache that contained un-sent demo reports
+      localStorage.removeItem('holerite_income_reports_v1');
+      const saved = localStorage.getItem(STORAGE_KEY_INCOME_REPORTS);
       if (saved) return JSON.parse(saved);
     } catch (e) {}
-    return SAMPLE_INCOME_REPORTS;
+    return [];
   });
   const [isIncomeReportsAdminOpen, setIsIncomeReportsAdminOpen] = useState(false);
   const [viewingIncomeReport, setViewingIncomeReport] = useState<IncomeReport | null>(null);
@@ -389,9 +393,10 @@ export default function App() {
     });
 
     const unsubIncome = subscribeToIncomeReports((remoteReports) => {
-      if (remoteReports.length > 0) {
-        setIncomeReports(remoteReports);
-      }
+      setIncomeReports(remoteReports);
+      try {
+        localStorage.setItem(STORAGE_KEY_INCOME_REPORTS, JSON.stringify(remoteReports));
+      } catch (e) {}
     });
 
     const unsubLogs = subscribeSystemLogs((remoteLogs) => {
@@ -1026,17 +1031,43 @@ export default function App() {
 
   const handleSaveIncomeReports = async (newReports: IncomeReport[]) => {
     try {
-      await saveIncomeReportsBatchFirestore(newReports);
+      const nowIso = new Date().toISOString();
+      const stampedReports: IncomeReport[] = newReports.map(r => ({
+        ...r,
+        enviadoEm: r.enviadoEm || nowIso,
+        canalEnvio: r.canalEnvio || 'PORTAL'
+      }));
+
+      await saveIncomeReportsBatchFirestore(stampedReports);
       setIncomeReports(prev => {
         const map = new Map(prev.map(r => [r.id, r]));
-        newReports.forEach(r => map.set(r.id, r));
+        stampedReports.forEach(r => map.set(r.id, r));
         const merged = Array.from(map.values());
         try {
-          localStorage.setItem('holerite_income_reports_v1', JSON.stringify(merged));
+          localStorage.setItem(STORAGE_KEY_INCOME_REPORTS, JSON.stringify(merged));
         } catch (e) {}
+        fetch('/api/income-reports', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reports: merged })
+        }).catch(() => {});
         return merged;
       });
-      showToast(`${newReports.length} Comprovantes de Rendimentos salvos no banco de dados!`);
+
+      // Registra no histórico de comunicações/auditoria para cada comprovante disponibilizado
+      stampedReports.forEach(rep => {
+        const matchedEmp = employees.find(
+          e =>
+            String(e.codigo).trim() === String(rep.beneficiario.employeeCodigo).trim() ||
+            (e.cpf && rep.beneficiario.cpf && e.cpf.replace(/\D/g, '') === rep.beneficiario.cpf.replace(/\D/g, ''))
+        );
+        recordIncomeReportEvent(rep, matchedEmp, {
+          canal: 'PORTAL',
+          sucesso: true
+        }).catch(() => {});
+      });
+
+      showToast(`${stampedReports.length} Comprovantes de Rendimentos salvos e disponibilizados no Portal!`);
     } catch (err: any) {
       console.error(err);
       showToast(`Erro ao salvar comprovantes: ${err?.message || 'Erro'}`);
@@ -1049,8 +1080,13 @@ export default function App() {
     setIncomeReports(prev => {
       const filtered = prev.filter(r => r.id !== id);
       try {
-        localStorage.setItem('holerite_income_reports_v1', JSON.stringify(filtered));
+        localStorage.setItem(STORAGE_KEY_INCOME_REPORTS, JSON.stringify(filtered));
       } catch (e) {}
+      fetch('/api/income-reports', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reports: filtered })
+      }).catch(() => {});
       return filtered;
     });
 
@@ -1071,8 +1107,13 @@ export default function App() {
     setIncomeReports(prev => {
       const filtered = prev.filter(r => r.anoCalendario !== anoCalendario);
       try {
-        localStorage.setItem('holerite_income_reports_v1', JSON.stringify(filtered));
+        localStorage.setItem(STORAGE_KEY_INCOME_REPORTS, JSON.stringify(filtered));
       } catch (e) {}
+      fetch('/api/income-reports', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reports: filtered })
+      }).catch(() => {});
       return filtered;
     });
 
@@ -1226,6 +1267,7 @@ export default function App() {
               onOpenUserManagement={() => setIsUserManagementOpen(true)}
               onOpenMedicalCertificates={() => setIsMedicalCertificatesAdminOpen(true)}
               onOpenIncomeReports={() => setIsIncomeReportsAdminOpen(true)}
+              onViewIncomeReport={(rep) => setViewingIncomeReport(rep)}
               onOpenSystemLogs={() => setIsSystemLogsOpen(true)}
               systemLogsCount={systemLogs.length}
             />

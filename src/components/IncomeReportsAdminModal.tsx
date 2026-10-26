@@ -3,6 +3,7 @@ import { IncomeReport, Employee, PayReceipt, SystemConfig } from '../types';
 import { formatCurrencyBRL, generateIncomeReportPdf } from '../utils/incomeReportPdfGenerator';
 import { SAMPLE_INCOME_REPORTS } from '../data/sampleIncomeReports';
 import { sendEvolutionWhatsAppMessage, formatWhatsAppPhone } from '../services/whatsappService';
+import { recordIncomeReportEvent } from '../services/loggerService';
 import {
   X,
   FileText,
@@ -357,11 +358,28 @@ export const IncomeReportsAdminModal: React.FC<IncomeReportsAdminModalProps> = (
           text: messageText
         });
         if (res.success) {
+          recordIncomeReportEvent(report, emp, {
+            canal: 'WHATSAPP',
+            sucesso: true,
+            destino: phone
+          }).catch(() => {});
           showFeedback(`Notificação enviada com sucesso para ${report.beneficiario.nomeCompleto} via Evolution API!`, 'success');
         } else {
+          recordIncomeReportEvent(report, emp, {
+            canal: 'WHATSAPP',
+            sucesso: false,
+            destino: phone,
+            errorMsg: res.message || 'Erro desconhecido'
+          }).catch(() => {});
           showFeedback(`Falha no envio via Evolution API: ${res.message || 'Erro desconhecido'}.`, 'error');
         }
       } catch (e: any) {
+        recordIncomeReportEvent(report, emp, {
+          canal: 'WHATSAPP',
+          sucesso: false,
+          destino: phone,
+          errorMsg: e?.message || 'Falha de conexão'
+        }).catch(() => {});
         showFeedback(`Erro ao conectar com Evolution API: ${e?.message || 'Falha de conexão'}.`, 'error');
       }
     } else {
@@ -580,7 +598,7 @@ export const IncomeReportsAdminModal: React.FC<IncomeReportsAdminModalProps> = (
                           <th className="py-3 px-4 text-right">Previdência (INSS)</th>
                           <th className="py-3 px-4 text-right">IRRF Retido</th>
                           <th className="py-3 px-4 text-right">13º Salário</th>
-                          <th className="py-3 px-4 text-center">Portal</th>
+                          <th className="py-3 px-4 text-center">Status de Envio</th>
                           <th className="py-3 px-4 text-center">Ações</th>
                         </tr>
                       </thead>
@@ -626,10 +644,17 @@ export const IncomeReportsAdminModal: React.FC<IncomeReportsAdminModalProps> = (
                               R$ {formatCurrencyBRL(rep.tributacaoExclusiva.decimoTerceiroSalario)}
                             </td>
                             <td className="py-3 px-4 text-center">
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                                Disponível
-                              </span>
+                              <div className="flex flex-col items-center gap-0.5">
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                  Enviado ao Portal
+                                </span>
+                                {(rep.enviadoEm || rep.criadoEm) && (
+                                  <span className="text-[9.5px] text-slate-400">
+                                    {new Date(rep.enviadoEm || rep.criadoEm).toLocaleDateString('pt-BR')}
+                                  </span>
+                                )}
+                              </div>
                             </td>
                             <td className="py-3 px-4 text-center">
                               <div className="flex items-center justify-center gap-1.5">

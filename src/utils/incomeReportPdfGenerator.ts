@@ -1,9 +1,53 @@
 import { jsPDF } from 'jspdf';
-import { IncomeReport } from '../types';
+import { IncomeReport, Employee } from '../types';
 
 export function formatCurrencyBRL(val: number | undefined | null): string {
   if (val === undefined || val === null || isNaN(val)) return '0,00';
   return val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+export function getEmployeeIncomeReports(employee: Employee, reports: IncomeReport[]): IncomeReport[] {
+  const normalizeText = (s?: string) =>
+    (s || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim()
+      .toLowerCase();
+  const cleanDigitsOnly = (s?: string) => (s || '').replace(/\D/g, '');
+
+  return reports.filter(r => {
+    // 1. Direct code matching
+    if (r.beneficiario?.employeeCodigo && employee.codigo) {
+      if (String(r.beneficiario.employeeCodigo).trim() === String(employee.codigo).trim()) return true;
+      const codeA = parseInt(String(r.beneficiario.employeeCodigo).trim(), 10);
+      const codeB = parseInt(String(employee.codigo).trim(), 10);
+      if (!isNaN(codeA) && !isNaN(codeB) && codeA > 0 && codeA === codeB) return true;
+    }
+    // 2. CPF matching (ignoring placeholder 000.000.000-00)
+    if (employee.cpf && r.beneficiario?.cpf) {
+      const cleanEmpCpf = cleanDigitsOnly(employee.cpf);
+      const cleanRepCpf = cleanDigitsOnly(r.beneficiario.cpf);
+      if (
+        cleanEmpCpf.length === 11 &&
+        cleanRepCpf.length === 11 &&
+        cleanEmpCpf !== '00000000000' &&
+        cleanEmpCpf === cleanRepCpf
+      ) {
+        return true;
+      }
+    }
+    // 3. Name matching
+    if (employee.nome && r.beneficiario?.nomeCompleto) {
+      const nameEmp = normalizeText(employee.nome);
+      const nameRep = normalizeText(r.beneficiario.nomeCompleto);
+      if (nameEmp && nameRep && nameEmp.length >= 4 && nameRep.length >= 4) {
+        if (nameEmp === nameRep || nameEmp.includes(nameRep) || nameRep.includes(nameEmp)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  });
 }
 
 export function generateIncomeReportPdf(report: IncomeReport): jsPDF {

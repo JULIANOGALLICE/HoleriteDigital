@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Employee, PayReceipt, SystemConfig, MedicalCertificate, IncomeReport } from '../types';
 import { formatBRL, downloadPayReceiptPDF, generateSignedPayReceiptBase64, generatePayReceiptPDF } from '../utils/pdfGenerator';
+import { getEmployeeIncomeReports } from '../utils/incomeReportPdfGenerator';
 import { createSignatureReminderWhatsAppMessage } from '../utils/notifications';
 import { dispatchWhatsAppSmart } from '../services/whatsappService';
 import { recordWhatsAppDispatchEvent } from '../services/loggerService';
@@ -53,6 +54,7 @@ interface AdminPortalProps {
   onOpenUserManagement?: () => void;
   onOpenMedicalCertificates?: () => void;
   onOpenIncomeReports?: () => void;
+  onViewIncomeReport?: (report: IncomeReport) => void;
   onOpenSystemLogs?: () => void;
   systemLogsCount?: number;
 }
@@ -75,6 +77,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   onOpenUserManagement,
   onOpenMedicalCertificates,
   onOpenIncomeReports,
+  onViewIncomeReport,
   onOpenSystemLogs,
   systemLogsCount
 }) => {
@@ -560,6 +563,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
             );
             const isSigned = receipt?.statusAssinatura === 'ASSINADO';
             const familyCount = emp.contatosFamiliares?.length || 0;
+            const empIrpfReports = getEmployeeIncomeReports(emp, incomeReports);
+            const latestIrpf = empIrpfReports[0];
 
             return (
               <div key={emp.codigo} className="p-4 space-y-3 hover:bg-slate-50 transition-colors">
@@ -568,17 +573,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="font-mono text-xs font-bold text-slate-500">#{emp.codigo}</span>
                       <span className="font-bold text-slate-900 text-sm">{emp.nome}</span>
-                      {emp.codigo === '6' && (
-                        <span className="text-[9px] bg-blue-100 text-blue-800 px-1.5 py-0.2 rounded font-semibold">
-                          Você
-                        </span>
-                      )}
                     </div>
                     <p className="text-[11px] text-slate-500 mt-0.5">
                       {emp.cargo} • {emp.departamento}
                     </p>
                   </div>
-                  <div>
+                  <div className="flex flex-col items-end gap-1">
                     {receipt ? (
                       isSigned ? (
                         <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
@@ -591,6 +591,17 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                       )
                     ) : (
                       <span className="text-slate-400 text-xs">-</span>
+                    )}
+                    {latestIrpf ? (
+                      <button
+                        type="button"
+                        onClick={() => onViewIncomeReport ? onViewIncomeReport(latestIrpf) : onOpenIncomeReports?.()}
+                        className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200 cursor-pointer"
+                      >
+                        <CheckCircle className="w-3 h-3 text-indigo-600" /> IRPF {latestIrpf.anoCalendario} Enviado
+                      </button>
+                    ) : (
+                      <span className="text-[10px] text-slate-400">IRPF: Não enviado</span>
                     )}
                   </div>
                 </div>
@@ -696,6 +707,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                 <th className="py-3 px-4">Telefone / Familiares</th>
                 <th className="py-3 px-4 text-right">Líquido ({selectedMonth.split(' ')[0]})</th>
                 <th className="py-3 px-4 text-center">Ciência</th>
+                <th className="py-3 px-4 text-center">Comprovante IRPF</th>
                 <th className="py-3 px-4 text-right">Ações</th>
               </tr>
             </thead>
@@ -706,6 +718,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                 );
                 const isSigned = receipt?.statusAssinatura === 'ASSINADO';
                 const familyCount = emp.contatosFamiliares?.length || 0;
+                const empIrpfReports = getEmployeeIncomeReports(emp, incomeReports);
+                const latestIrpf = empIrpfReports[0];
 
                 return (
                   <tr key={emp.codigo} className="hover:bg-slate-50 transition-colors">
@@ -716,11 +730,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                     <td className="py-3 px-4">
                       <div className="font-bold text-slate-900 flex items-center gap-1.5">
                         {emp.nome}
-                        {emp.codigo === '6' && (
-                          <span className="text-[9px] bg-blue-100 text-blue-800 px-1.5 py-0.2 rounded font-semibold">
-                            Você
-                          </span>
-                        )}
                       </div>
                       <div className="text-[11px] text-slate-500 flex items-center gap-2 mt-0.5">
                         <span>{emp.cargo}</span>
@@ -770,6 +779,21 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                         )
                       ) : (
                         <span className="text-slate-400 text-[10px]">-</span>
+                      )}
+                    </td>
+
+                    <td className="py-3 px-4 text-center">
+                      {latestIrpf ? (
+                        <button
+                          type="button"
+                          onClick={() => onViewIncomeReport ? onViewIncomeReport(latestIrpf) : onOpenIncomeReports?.()}
+                          className="inline-flex items-center gap-1 text-[10px] font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-2 py-0.5 rounded-full border border-indigo-200 transition-colors cursor-pointer"
+                          title={`Visualizar Comprovante IRPF Ano-Calendário ${latestIrpf.anoCalendario}`}
+                        >
+                          <CheckCircle className="w-3 h-3 text-indigo-600" /> Enviado ({latestIrpf.anoCalendario})
+                        </button>
+                      ) : (
+                        <span className="text-slate-400 text-[10px]">Não enviado</span>
                       )}
                     </td>
 
