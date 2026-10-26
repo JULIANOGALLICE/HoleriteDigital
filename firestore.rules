@@ -67,5 +67,10 @@ service cloud.firestore {
     match /incomeReports/{reportId} {
       allow read, write: if true;
     }
+
+    // Histórico de comunicações, acessos e auditoria (Logs do Sistema)
+    match /systemLogs/{logId} {
+      allow read, write: if true;
+    }
   }
 }

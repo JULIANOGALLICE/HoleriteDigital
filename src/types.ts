@@ -156,6 +156,8 @@ export interface SystemConfig {
   evolutionApiKey?: string;
   evolutionInstance?: string;
   enviarPdfAutomaticoWhatsapp?: boolean;
+  exigir2FALogin?: boolean;
+  canal2FALogin?: 'WHATSAPP' | 'EMAIL' | 'AMBOS';
 }
 
 export interface UserAccount {
@@ -279,3 +281,44 @@ export interface IncomeReport {
 
   criadoEm: string;
 }
+
+export type SystemLogEventType =
+  | 'LOGIN'
+  | 'LOGIN_2FA'
+  | 'LOGIN_FALHA'
+  | 'LOGOUT'
+  | 'WHATSAPP_ENVIO'
+  | 'WHATSAPP_LEMBRETE'
+  | 'EMAIL_ENVIO'
+  | 'EMAIL_LEMBRETE'
+  | 'ASSINATURA_HOLERITE'
+  | 'ENVIO_ATESTADO'
+  | 'ANALISE_ATESTADO'
+  | 'IMPORTACAO_PLANILHA'
+  | 'IMPORTACAO_HOLERITE'
+  | 'CONFIGURACAO_SISTEMA';
+
+export type SystemLogCategory =
+  | 'COMUNICACAO'
+  | 'LOGIN'
+  | 'ASSINATURA'
+  | 'SISTEMA'
+  | 'DOCUMENTO';
+
+export interface SystemLog {
+  id: string;
+  timestamp: string; // ISO format: 2026-10-24T18:40:00.000Z
+  formattedDate: string; // Ex: "24/10/2026 às 18:40:00"
+  tipoEvento: SystemLogEventType;
+  categoria: SystemLogCategory;
+  canal?: 'WHATSAPP' | 'EMAIL' | 'PORTAL' | 'SISTEMA';
+  usuarioNome: string;
+  usuarioEmail?: string;
+  usuarioMatricula?: string;
+  usuarioRole: 'GESTOR' | 'COLABORADOR' | 'SISTEMA';
+  descricao: string;
+  sucesso: boolean;
+  mensagemErro?: string;
+  detalhes?: Record<string, any>;
+}
+

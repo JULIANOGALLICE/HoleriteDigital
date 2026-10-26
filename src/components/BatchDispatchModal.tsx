@@ -36,6 +36,7 @@ import {
   formatWhatsAppPhone,
   renderWhatsAppTemplate
 } from '../services/whatsappService';
+import { recordWhatsAppDispatchEvent, recordEmailDispatchEvent } from '../services/loggerService';
 
 interface BatchDispatchModalProps {
   isOpen: boolean;
@@ -168,17 +169,34 @@ export const BatchDispatchModal: React.FC<BatchDispatchModalProps> = ({
         if (res.success) {
           sent++;
           setItemStatuses(prev => ({ ...prev, [emp.codigo]: 'sent' }));
+          recordWhatsAppDispatchEvent(emp, receipt, {
+            phone,
+            success: true,
+            isReminder: activeIsReminder
+          }).catch(() => {});
         } else {
           failed++;
           lastErrorMsg = res.message || 'Falha no envio';
           setItemStatuses(prev => ({ ...prev, [emp.codigo]: 'failed' }));
           setItemErrors(prev => ({ ...prev, [emp.codigo]: res.message || 'Erro' }));
+          recordWhatsAppDispatchEvent(emp, receipt, {
+            phone,
+            success: false,
+            isReminder: activeIsReminder,
+            errorMsg: res.message
+          }).catch(() => {});
         }
       } catch (err: any) {
         failed++;
         lastErrorMsg = err?.message || 'Erro ao contatar Evolution API';
         setItemStatuses(prev => ({ ...prev, [emp.codigo]: 'failed' }));
         setItemErrors(prev => ({ ...prev, [emp.codigo]: err?.message || 'Erro de conexão' }));
+        recordWhatsAppDispatchEvent(emp, receipt, {
+          phone,
+          success: false,
+          isReminder: activeIsReminder,
+          errorMsg: err?.message
+        }).catch(() => {});
       }
 
       // Pequena pausa entre envios para evitar taxa de limite da Evolution API
@@ -247,13 +265,30 @@ export const BatchDispatchModal: React.FC<BatchDispatchModalProps> = ({
 
       if (res.success) {
         setItemStatuses(prev => ({ ...prev, [emp.codigo]: 'sent' }));
+        recordWhatsAppDispatchEvent(emp, receipt, {
+          phone,
+          success: true,
+          isReminder: activeIsReminder
+        }).catch(() => {});
       } else {
         setItemStatuses(prev => ({ ...prev, [emp.codigo]: 'failed' }));
         setItemErrors(prev => ({ ...prev, [emp.codigo]: res.message || 'Falha' }));
+        recordWhatsAppDispatchEvent(emp, receipt, {
+          phone,
+          success: false,
+          isReminder: activeIsReminder,
+          errorMsg: res.message
+        }).catch(() => {});
       }
     } catch (err: any) {
       setItemStatuses(prev => ({ ...prev, [emp.codigo]: 'failed' }));
       setItemErrors(prev => ({ ...prev, [emp.codigo]: err?.message || 'Erro de rede' }));
+      recordWhatsAppDispatchEvent(emp, receipt, {
+        phone,
+        success: false,
+        isReminder: activeIsReminder,
+        errorMsg: err?.message
+      }).catch(() => {});
     }
   };
 
@@ -302,9 +337,20 @@ export const BatchDispatchModal: React.FC<BatchDispatchModalProps> = ({
 
       if (res.success) {
         sent++;
+        recordEmailDispatchEvent(emp, receipt, {
+          email: emp.email,
+          success: true,
+          isReminder: activeIsReminder
+        }).catch(() => {});
       } else {
         failed++;
         lastErrorMsg = res.message + (res.details ? ` (${res.details})` : '');
+        recordEmailDispatchEvent(emp, receipt, {
+          email: emp.email,
+          success: false,
+          isReminder: activeIsReminder,
+          errorMsg: lastErrorMsg
+        }).catch(() => {});
       }
 
       await new Promise(r => setTimeout(r, 600));

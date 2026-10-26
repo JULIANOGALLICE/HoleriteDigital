@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Employee, PayReceipt, SystemConfig, UserAccount, MedicalCertificate, IncomeReport } from './types';
+import { Employee, PayReceipt, SystemConfig, UserAccount, MedicalCertificate, IncomeReport, SystemLog } from './types';
 import { INITIAL_EMPLOYEES, INITIAL_RECEIPTS, INITIAL_USERS } from './data/initialData';
 import { SAMPLE_INCOME_REPORTS } from './data/sampleIncomeReports';
 import { Navbar } from './components/Navbar';
@@ -19,6 +19,7 @@ import { MedicalCertificatesAdminModal } from './components/MedicalCertificatesA
 import { MedicalCertificateViewModal } from './components/MedicalCertificateViewModal';
 import { IncomeReportModal } from './components/IncomeReportModal';
 import { IncomeReportsAdminModal } from './components/IncomeReportsAdminModal';
+import { SystemLogsModal } from './components/SystemLogsModal';
 import {
   testConnection,
   auth
@@ -30,7 +31,9 @@ import {
   subscribeUsers,
   subscribeMedicalCertificates,
   subscribeToIncomeReports,
+  subscribeSystemLogs,
   saveEmployeeFirestore,
+  saveEmployeesBatchFirestore,
   saveReceiptFirestore,
   saveSystemConfigFirestore,
   signReceiptFirestore,
@@ -45,8 +48,17 @@ import {
   saveIncomeReportsBatchFirestore,
   deleteIncomeReportFirestore,
   deleteIncomeReportsBatchFirestore,
+  clearSystemLogsFirestore,
   DEFAULT_CONFIG
 } from './services/firestoreService';
+import {
+  recordLoginEvent,
+  recordLogoutEvent,
+  recordSignatureEvent,
+  recordEmailDispatchEvent,
+  recordSpreadsheetImportEvent,
+  getInitialSampleLogs
+} from './services/loggerService';
 import { CheckCircle2, ShieldCheck } from 'lucide-react';
 import { getActiveA1Certificate, saveActiveA1Certificate } from './utils/certificateA1';
 
@@ -104,7 +116,7 @@ export default function App() {
   const [isProcessorOpen, setIsProcessorOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<
-    'CERTIFICADO_A1' | 'EMPRESA' | 'EMAIL_SERVER' | 'ASSINATURA' | 'COMUNICACAO' | 'DADOS'
+    'CERTIFICADO_A1' | 'EMPRESA' | 'EMAIL_SERVER' | 'ASSINATURA' | 'COMUNICACAO' | 'PLANILHA_USUARIOS' | 'DADOS'
   >('CERTIFICADO_A1');
   const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [isUserManagementOpen, setIsUserManagementOpen] = useState(false);
@@ -139,6 +151,16 @@ export default function App() {
   });
   const [isIncomeReportsAdminOpen, setIsIncomeReportsAdminOpen] = useState(false);
   const [viewingIncomeReport, setViewingIncomeReport] = useState<IncomeReport | null>(null);
+
+  // Central de Auditoria & Logs do Sistema
+  const [systemLogs, setSystemLogs] = useState<SystemLog[]>(() => {
+    try {
+      const saved = localStorage.getItem('system_logs_data');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return getInitialSampleLogs();
+  });
+  const [isSystemLogsOpen, setIsSystemLogsOpen] = useState(false);
 
   // Toast feedback
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -224,6 +246,26 @@ export default function App() {
             data.receipts.forEach((r: PayReceipt) => map.set(r.id, r));
             const list = Array.from(map.values());
             try { localStorage.setItem(STORAGE_KEY_RECEIPTS, JSON.stringify(list)); } catch (e) {}
+            return list;
+          });
+        }
+      })
+      .catch(() => {});
+
+    fetch('/api/system-logs')
+      .then(res => res.json())
+      .then(data => {
+        if (data?.success && Array.isArray(data.logs) && data.logs.length > 0) {
+          setSystemLogs(prev => {
+            const map = new Map<string, SystemLog>();
+            prev.forEach(l => map.set(l.id, l));
+            data.logs.forEach((l: SystemLog) => map.set(l.id, l));
+            const list = Array.from(map.values()).sort(
+              (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+            );
+            try {
+              localStorage.setItem('system_logs_data', JSON.stringify(list));
+            } catch (e) {}
             return list;
           });
         }
@@ -352,6 +394,40 @@ export default function App() {
       }
     });
 
+    const unsubLogs = subscribeSystemLogs((remoteLogs) => {
+      if (remoteLogs && remoteLogs.length > 0) {
+        setSystemLogs(prev => {
+          const map = new Map<string, SystemLog>();
+          remoteLogs.forEach(l => map.set(l.id, l));
+          prev.forEach(l => {
+            if (!map.has(l.id)) map.set(l.id, l);
+          });
+          const list = Array.from(map.values()).sort(
+            (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+          );
+          try {
+            localStorage.setItem('system_logs_data', JSON.stringify(list));
+          } catch (e) {}
+          return list;
+        });
+      }
+    });
+
+    const handleSystemLogCreated = (e: any) => {
+      if (e.detail) {
+        setSystemLogs(prev => {
+          const exists = prev.some(l => l.id === e.detail.id);
+          if (exists) return prev;
+          const list = [e.detail, ...prev];
+          try {
+            localStorage.setItem('system_logs_data', JSON.stringify(list));
+          } catch (err) {}
+          return list;
+        });
+      }
+    };
+    window.addEventListener('applet:system_log_created', handleSystemLogCreated);
+
     return () => {
       unsubEmployees();
       unsubReceipts();
@@ -359,6 +435,8 @@ export default function App() {
       unsubUsers();
       unsubMedical();
       unsubIncome();
+      unsubLogs();
+      window.removeEventListener('applet:system_log_created', handleSystemLogCreated);
     };
   }, []);
 
@@ -420,45 +498,91 @@ export default function App() {
     }
   }, [currentUser, currentView]);
 
-  // Current active employee for the employee view (strictly matched for Colaborador)
-  const currentEmployee =
-    (currentUser?.role === 'COLABORADOR'
-      ? employees.find(
-          e =>
-            e.codigo === currentUser.employeeCodigo ||
-            (currentUser.email && e.email.toLowerCase() === currentUser.email.toLowerCase())
-        )
-      : employees.find(e => e.codigo === selectedEmployeeId)) ||
-    employees.find(e => e.codigo === selectedEmployeeId) ||
-    employees[0] || {
-      codigo: '0',
-      nome: 'Nenhum colaborador cadastrado',
-      cbo: '',
-      cargo: '',
-      departamento: '',
-      filial: '',
-      dataAdmissao: '',
-      salarioBase: 0,
-      cpf: '',
-      email: '',
-      telefone: '',
-      status: 'ATIVO',
-      endereco: { logradouro: '', numero: '', bairro: '', cidade: '', uf: '', cep: '' },
-      contatosFamiliares: [],
-      dadosBancarios: { banco: '', agencia: '', conta: '', tipoConta: 'CORRENTE' }
-    };
+  const normalizeNameForMatch = (s?: string) =>
+    (s || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/\(gestor.*?\)/gi, '')
+      .trim()
+      .toLowerCase();
+
+  const findLinkedEmployee = (user: UserAccount | null, list: Employee[]): Employee | null => {
+    if (!user || list.length === 0) return null;
+    const uEmail = (user.email || '').trim().toLowerCase();
+    const uName = normalizeNameForMatch(user.nome);
+    const uCode = (user.employeeCodigo || '').trim();
+
+    if (user.role === 'COLABORADOR') {
+      if (uCode) {
+        const byCode = list.find(e => String(e.codigo).trim() === uCode);
+        if (byCode) return byCode;
+      }
+      if (uEmail) {
+        const byEmail = list.find(e => (e.email || '').trim().toLowerCase() === uEmail);
+        if (byEmail) return byEmail;
+      }
+      if (uName) {
+        const byName = list.find(e => normalizeNameForMatch(e.nome) === uName);
+        if (byName) return byName;
+      }
+      return null;
+    }
+
+    // Para GESTOR: só vincula a um colaborador se os dados do colaborador (e-mail ou nome) realmente corresponderem ao Gestor
+    if (uCode) {
+      const byCode = list.find(e => String(e.codigo).trim() === uCode);
+      if (byCode) {
+        const eEmail = (byCode.email || '').trim().toLowerCase();
+        const eName = normalizeNameForMatch(byCode.nome);
+        const sameEmail = Boolean(uEmail && eEmail && uEmail === eEmail);
+        const sameName = Boolean(
+          uName && eName && (eName === uName || eName.includes(uName) || uName.includes(eName))
+        );
+        if (sameEmail || sameName) {
+          return byCode;
+        }
+      }
+    }
+    if (uEmail) {
+      const byEmail = list.find(e => (e.email || '').trim().toLowerCase() === uEmail);
+      if (byEmail) return byEmail;
+    }
+    if (uName) {
+      const byName = list.find(e => {
+        const eName = normalizeNameForMatch(e.nome);
+        return Boolean(eName && (eName === uName || eName.includes(uName) || uName.includes(eName)));
+      });
+      if (byName) return byName;
+    }
+    return null;
+  };
+
+  // Colaborador estritamente vinculado ao usuário logado
+  const linkedEmployee = findLinkedEmployee(currentUser, employees);
 
   // Actions
   const handleOpenDigitalSignature = (receipt: PayReceipt) => {
-    const emp = employees.find(e => e.codigo === receipt.employeeCodigo) || currentEmployee;
-    setSigningModalData({ employee: emp, receipt });
+    if (currentView !== 'EMPLOYEE') {
+      showToast('A assinatura do holerite só pode ser realizada pelo próprio colaborador no Portal do Colaborador.');
+      return;
+    }
+    if (!currentUser || !linkedEmployee || receipt.employeeCodigo !== linkedEmployee.codigo) {
+      showToast('Ação bloqueada: Você só pode assinar o holerite vinculado ao seu próprio usuário.');
+      return;
+    }
+    setSigningModalData({ employee: linkedEmployee, receipt });
   };
 
   const handleDigitalSignatureSuccess = async (receiptId: string, code: string, canal: 'WHATSAPP' | 'EMAIL') => {
+    const targetReceipt = receipts.find(r => r.id === receiptId);
+    if (currentView !== 'EMPLOYEE' || !currentUser || !linkedEmployee || !targetReceipt || targetReceipt.employeeCodigo !== linkedEmployee.codigo) {
+      showToast('Ação bloqueada: Somente o colaborador titular pode assinar seu próprio holerite pelo Portal do Colaborador.');
+      return;
+    }
+
     const now = new Date();
     const formattedDate = now.toLocaleDateString('pt-BR') + ' às ' + now.toLocaleTimeString('pt-BR');
 
-    const targetReceipt = receipts.find(r => r.id === receiptId);
     let updatedReceipt: PayReceipt | undefined;
 
     // Local state update
@@ -498,6 +622,12 @@ export default function App() {
         }
       });
     }
+
+    recordSignatureEvent(linkedEmployee, targetReceipt, {
+      metodo: canal,
+      sucesso: true,
+      codigoVerificacao: code
+    }).catch(() => {});
 
     showToast('Holerite assinado digitalmente com autenticação em duas etapas!');
   };
@@ -574,7 +704,10 @@ export default function App() {
       const updatedList = [...prevUsers];
       newOrUpdatedEmployees.forEach(emp => {
         const existingIdx = updatedList.findIndex(
-          u => u.employeeCodigo === emp.codigo || (u.nome && u.nome.trim().toLowerCase() === emp.nome.trim().toLowerCase())
+          u =>
+            u.role === 'COLABORADOR' &&
+            (u.employeeCodigo === emp.codigo ||
+              (u.nome && u.nome.trim().toLowerCase() === emp.nome.trim().toLowerCase()))
         );
 
         if (existingIdx >= 0) {
@@ -661,6 +794,50 @@ export default function App() {
     }
   };
 
+  const handleBatchUpdateEmployeesAndUsers = async (
+    updatedEmployees: Employee[],
+    updatedUsers: UserAccount[]
+  ) => {
+    setEmployees(updatedEmployees);
+    try {
+      localStorage.setItem(STORAGE_KEY_EMPLOYEES, JSON.stringify(updatedEmployees));
+    } catch (e) {}
+
+    setUsers(updatedUsers);
+    try {
+      localStorage.setItem(STORAGE_KEY_USERS, JSON.stringify(updatedUsers));
+    } catch (e) {}
+
+    // Sincronizar backup em disco do servidor
+    fetch('/api/employees', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ employees: updatedEmployees })
+    }).catch(() => {});
+
+    fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ users: updatedUsers })
+    }).catch(() => {});
+
+    // Sincronizar em lote com o Firestore
+    saveEmployeesBatchFirestore(updatedEmployees).catch(() => {});
+    saveUsersBatchFirestore(updatedUsers).catch(() => {});
+
+    if (currentUser) {
+      recordSpreadsheetImportEvent(currentUser, {
+        totalRows: updatedEmployees.length,
+        matchedCount: updatedEmployees.length,
+        newEmailsCount: updatedEmployees.filter(e => Boolean(e.email)).length,
+        newPhonesCount: updatedEmployees.filter(e => Boolean(e.telefone)).length,
+        newPasswordsCount: updatedUsers.filter(u => Boolean(u.senha)).length
+      }).catch(() => {});
+    }
+
+    showToast(`Base atualizada! ${updatedEmployees.length} colaboradores e ${updatedUsers.length} usuários sincronizados.`);
+  };
+
   const handleClearProductionData = async () => {
     setEmployees([]);
     setReceipts([]);
@@ -697,6 +874,15 @@ export default function App() {
 
     if (updatedReceipt) {
       saveReceiptFirestore(updatedReceipt).catch(() => {});
+    }
+
+    const targetEmp = employees.find(e => e.codigo === employeeCodigo);
+    const targetRec = receipts.find(r => r.id === receiptId);
+    if (targetEmp && targetRec) {
+      recordEmailDispatchEvent(targetEmp, targetRec, {
+        email,
+        success: true
+      }).catch(() => {});
     }
 
     showToast(`Comprovante enviado com sucesso para ${email}!`);
@@ -900,23 +1086,33 @@ export default function App() {
 
   const handleLoginSuccess = (user: UserAccount, employee?: Employee) => {
     setCurrentUser(user);
-    setCurrentView('EMPLOYEE');
-    if (employee) {
-      setSelectedEmployeeId(employee.codigo);
-    } else if (user.employeeCodigo) {
-      setSelectedEmployeeId(user.employeeCodigo);
+    const matchedEmp = employee || findLinkedEmployee(user, employees);
+    if (user.role === 'GESTOR' && !matchedEmp) {
+      setCurrentView('ADMIN');
+    } else {
+      setCurrentView('EMPLOYEE');
     }
+    if (matchedEmp) {
+      setSelectedEmployeeId(matchedEmp.codigo);
+    }
+    recordLoginEvent(user, matchedEmp || undefined, {
+      is2FA: Boolean(systemConfig.exigir2FALogin),
+      success: true
+    }).catch(() => {});
     showToast(`Bem-vindo(a), ${user.nome}!`);
   };
 
   const handleLogout = () => {
+    if (currentUser) {
+      recordLogoutEvent(currentUser).catch(() => {});
+    }
     setCurrentUser(null);
     localStorage.removeItem(STORAGE_KEY_USER);
     auth.signOut().catch(() => {});
     showToast('Sessão encerrada. Até logo!');
   };
 
-  const handleOpenSettingsWithTab = (tab?: 'CERTIFICADO_A1' | 'EMPRESA' | 'EMAIL_SERVER' | 'ASSINATURA' | 'COMUNICACAO' | 'DADOS') => {
+  const handleOpenSettingsWithTab = (tab?: 'CERTIFICADO_A1' | 'EMPRESA' | 'EMAIL_SERVER' | 'ASSINATURA' | 'COMUNICACAO' | 'PLANILHA_USUARIOS' | 'DADOS') => {
     setSettingsInitialTab(tab || 'CERTIFICADO_A1');
     setIsSettingsOpen(true);
   };
@@ -949,6 +1145,7 @@ export default function App() {
           isFirebaseConnected={isFirebaseConnected}
           onOpenEmailSettings={() => handleOpenSettingsWithTab('EMAIL_SERVER')}
           onOpenUserManagement={() => setIsUserManagementOpen(true)}
+          systemConfig={systemConfig}
         />
       )}
 
@@ -961,19 +1158,20 @@ export default function App() {
             employees={employees}
             users={users}
             onLoginSuccess={handleLoginSuccess}
+            systemConfig={systemConfig}
           />
         </main>
       ) : (
         /* Conteúdo Autenticado: Portal do Colaborador ou Gestão RH */
         <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
           {currentView === 'EMPLOYEE' ? (
-            employees.length > 0 ? (
+            linkedEmployee ? (
               <EmployeePortal
                 currentUser={currentUser}
-                employee={currentEmployee}
+                employee={linkedEmployee}
                 allReceipts={receipts}
                 systemConfig={systemConfig}
-                medicalCertificates={medicalCertificates.filter(c => c.employeeCodigo === currentEmployee?.codigo)}
+                medicalCertificates={medicalCertificates.filter(c => c.employeeCodigo === linkedEmployee.codigo)}
                 onUploadMedicalCertificate={handleUploadMedicalCertificate}
                 incomeReports={incomeReports}
                 onViewIncomeReport={(rep) => setViewingIncomeReport(rep)}
@@ -988,18 +1186,25 @@ export default function App() {
                 onLogout={handleLogout}
               />
             ) : (
-              <div className="bg-white p-12 text-center rounded-2xl border border-slate-200 shadow-sm space-y-3">
+              <div className="bg-white p-10 sm:p-12 text-center rounded-2xl border border-slate-200 shadow-sm space-y-3 max-w-xl mx-auto my-6">
                 <ShieldCheck className="w-10 h-10 text-blue-600 mx-auto" />
-                <h3 className="font-bold text-slate-800 text-base">Ambiente Corporativo em Produção</h3>
-                <p className="text-xs text-slate-500 max-w-md mx-auto">
-                  Não há colaboradores cadastrados no momento. Acesse a Gestão RH para importar o primeiro arquivo PDF da folha de pagamento.
+                <h3 className="font-bold text-slate-800 text-base">
+                  Nenhum Holerite Vinculado ao Seu Usuário ({currentUser.nome})
+                </h3>
+                <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+                  Por segurança e conformidade com o Art. 464 da CLT, o <strong>Portal do Colaborador</strong> exibe e permite assinar exclusivamente o holerite vinculado ao próprio usuário logado.
+                  {currentUser.role === 'GESTOR'
+                    ? ' Utilize o painel Gestão RH / Admin para consultar os holerites de todos os colaboradores.'
+                    : ' Solicite ao Gestor de RH a vinculação da sua matrícula ao seu usuário.'}
                 </p>
-                <button
-                  onClick={() => setCurrentView('ADMIN')}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-sm transition-colors cursor-pointer"
-                >
-                  Ir para o Painel do Gestor
-                </button>
+                {currentUser.role === 'GESTOR' && (
+                  <button
+                    onClick={() => setCurrentView('ADMIN')}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-sm transition-colors cursor-pointer"
+                  >
+                    Ir para Gestão RH / Admin
+                  </button>
+                )}
               </div>
             )
           ) : (
@@ -1021,6 +1226,8 @@ export default function App() {
               onOpenUserManagement={() => setIsUserManagementOpen(true)}
               onOpenMedicalCertificates={() => setIsMedicalCertificatesAdminOpen(true)}
               onOpenIncomeReports={() => setIsIncomeReportsAdminOpen(true)}
+              onOpenSystemLogs={() => setIsSystemLogsOpen(true)}
+              systemLogsCount={systemLogs.length}
             />
           )}
         </main>
@@ -1072,13 +1279,9 @@ export default function App() {
         onClose={() => setViewingReceiptData(null)}
         employee={viewingReceiptData?.employee || null}
         receipt={viewingReceiptData?.receipt || null}
-        onSignReceipt={(id) => {
-          const rec = receipts.find(r => r.id === id);
-          if (rec) handleOpenDigitalSignature(rec);
-        }}
-        onTriggerDigitalSignature={handleOpenDigitalSignature}
         onOpenEmailModal={(emp, rec) => setEmailModalData({ employee: emp, receipt: rec })}
         certificateConfig={systemConfig.certificadoA1}
+        employerName={systemConfig.razaoSocial}
       />
 
       <BatchDispatchModal
@@ -1115,6 +1318,9 @@ export default function App() {
         initialTab={settingsInitialTab}
         onSaveConfig={handleSaveSystemConfig}
         onClearProductionData={handleClearProductionData}
+        employees={employees}
+        users={users}
+        onBatchUpdateEmployeesAndUsers={handleBatchUpdateEmployeesAndUsers}
       />
 
       {/* User Management Modal for Gestor */}
@@ -1138,6 +1344,7 @@ export default function App() {
         employees={employees}
         users={users}
         onLoginSuccess={handleLoginSuccess}
+        systemConfig={systemConfig}
       />
 
       {/* Authenticity & QR-Code Verification Modal */}
@@ -1190,6 +1397,21 @@ export default function App() {
       <IncomeReportModal
         report={viewingIncomeReport}
         onClose={() => setViewingIncomeReport(null)}
+      />
+
+      {/* Central de Auditoria, Histórico de Comunicações e Logs */}
+      <SystemLogsModal
+        isOpen={isSystemLogsOpen}
+        onClose={() => setIsSystemLogsOpen(false)}
+        logs={systemLogs}
+        employees={employees}
+        users={users}
+        onClearLogs={() => {
+          setSystemLogs([]);
+          localStorage.removeItem('system_logs_data');
+          clearSystemLogsFirestore().catch(() => {});
+          showToast('Histórico de logs limpo com sucesso.');
+        }}
       />
     </div>
   );

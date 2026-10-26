@@ -1,5 +1,5 @@
 import React from 'react';
-import { Employee, UserAccount } from '../types';
+import { Employee, UserAccount, SystemConfig } from '../types';
 import logoHolerite from '../Images/LogoHolerite.png';
 import {
   User,
@@ -24,6 +24,7 @@ interface NavbarProps {
   onOpenEmailSettings?: () => void;
   onOpenUserManagement?: () => void;
   onOpenVerificationModal?: () => void;
+  systemConfig?: SystemConfig;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -33,7 +34,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   currentUser,
   onLogout,
   onOpenEmailSettings,
-  onOpenUserManagement
+  onOpenUserManagement,
+  systemConfig
 }) => {
   // Só exibe a barra superior após o login
   if (!currentUser) return null;
@@ -58,7 +60,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               </h1>
             </div>
             <p className="hidden md:block text-[11px] text-slate-500 font-medium">
-              Cartório Francisco José Barbosa Nobre
+              {systemConfig?.razaoSocial || 'FRANCISCO JOSE BARBOSA NOBRE'}
             </p>
           </div>
         </div>

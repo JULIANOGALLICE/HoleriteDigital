@@ -8,10 +8,11 @@ interface ReceiptModalProps {
   onClose: () => void;
   employee: Employee | null;
   receipt: PayReceipt | null;
-  onSignReceipt: (receiptId: string) => void;
+  onSignReceipt?: (receiptId: string) => void;
   onTriggerDigitalSignature?: (receipt: PayReceipt) => void;
   onOpenEmailModal: (employee: Employee, receipt: PayReceipt) => void;
   certificateConfig?: DigitalCertificateA1 | null;
+  employerName?: string;
 }
 
 export const ReceiptModal: React.FC<ReceiptModalProps> = ({
@@ -19,10 +20,9 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   onClose,
   employee,
   receipt,
-  onSignReceipt,
-  onTriggerDigitalSignature,
   onOpenEmailModal,
-  certificateConfig
+  certificateConfig,
+  employerName
 }) => {
   if (!isOpen || !employee || !receipt) return null;
 
@@ -31,7 +31,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
       <div className="relative w-full max-w-4xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh]">
         <div className="p-4 bg-slate-900 text-white flex justify-between items-center border-b border-slate-800">
           <div>
-            <h3 className="font-bold text-sm text-white">Visualização Oficial do Recibo</h3>
+            <h3 className="font-bold text-sm text-white">Visualização Oficial do Recibo (Modo Consulta Gestor)</h3>
             <p className="text-xs text-slate-400">
               {employee.nome} • {receipt.mesAno} ({receipt.tipoFolha})
             </p>
@@ -48,10 +48,10 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
           <ReceiptViewer
             employee={employee}
             receipt={receipt}
-            onSignReceipt={onSignReceipt}
-            onTriggerDigitalSignature={onTriggerDigitalSignature}
             onOpenEmailModal={onOpenEmailModal}
             isAdmin={true}
+            canSign={false}
+            employerName={employerName}
             certificateConfig={certificateConfig}
           />
         </div>

@@ -404,6 +404,8 @@ export const EmployeePortal: React.FC<EmployeePortalProps> = ({
                 onSignReceipt={onSignReceipt}
                 onTriggerDigitalSignature={onTriggerDigitalSignature}
                 onOpenEmailModal={onOpenEmailModal}
+                canSign={true}
+                employerName={systemConfig?.razaoSocial}
                 certificateConfig={systemConfig?.certificadoA1}
               />
             </>

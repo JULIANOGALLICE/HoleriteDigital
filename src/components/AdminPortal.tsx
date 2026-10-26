@@ -3,6 +3,7 @@ import { Employee, PayReceipt, SystemConfig, MedicalCertificate, IncomeReport } 
 import { formatBRL, downloadPayReceiptPDF, generateSignedPayReceiptBase64, generatePayReceiptPDF } from '../utils/pdfGenerator';
 import { createSignatureReminderWhatsAppMessage } from '../utils/notifications';
 import { dispatchWhatsAppSmart } from '../services/whatsappService';
+import { recordWhatsAppDispatchEvent } from '../services/loggerService';
 import {
   Users,
   FileText,
@@ -28,7 +29,9 @@ import {
   Stethoscope,
   BellRing,
   Lock,
-  AlertCircle
+  AlertCircle,
+  FileSpreadsheet,
+  History
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -46,10 +49,12 @@ interface AdminPortalProps {
   onBatchEmail: (selectedMonth: string) => void;
   onBatchWhatsAppReminder?: (selectedMonth: string) => void;
   onBatchEmailReminder?: (selectedMonth: string) => void;
-  onOpenSettingsModal: (tab?: 'CERTIFICADO_A1' | 'EMPRESA' | 'EMAIL_SERVER' | 'ASSINATURA' | 'COMUNICACAO' | 'DADOS') => void;
+  onOpenSettingsModal: (tab?: 'CERTIFICADO_A1' | 'EMPRESA' | 'EMAIL_SERVER' | 'ASSINATURA' | 'COMUNICACAO' | 'PLANILHA_USUARIOS' | 'DADOS') => void;
   onOpenUserManagement?: () => void;
   onOpenMedicalCertificates?: () => void;
   onOpenIncomeReports?: () => void;
+  onOpenSystemLogs?: () => void;
+  systemLogsCount?: number;
 }
 
 export const AdminPortal: React.FC<AdminPortalProps> = ({
@@ -69,7 +74,9 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   onOpenSettingsModal,
   onOpenUserManagement,
   onOpenMedicalCertificates,
-  onOpenIncomeReports
+  onOpenIncomeReports,
+  onOpenSystemLogs,
+  systemLogsCount
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDepartment, setSelectedDepartment] = useState('TODOS');
@@ -136,6 +143,14 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
         pdfBase64
       });
 
+      // Log para auditoria do gestor
+      recordWhatsAppDispatchEvent(emp, receipt, {
+        phone: emp.telefone,
+        success: res.success,
+        isReminder: false,
+        errorMsg: res.success ? undefined : res.message
+      }).catch(() => {});
+
       if (res.success) {
         confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
       }
@@ -156,6 +171,14 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
       const res = await dispatchWhatsAppSmart(systemConfig, emp, receipt, {
         customText: reminderText
       });
+
+      // Log para auditoria do gestor
+      recordWhatsAppDispatchEvent(emp, receipt, {
+        phone: emp.telefone,
+        success: res.success,
+        isReminder: true,
+        errorMsg: res.success ? undefined : res.message
+      }).catch(() => {});
 
       if (res.success) {
         confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
@@ -265,6 +288,31 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               {incomeReports && incomeReports.length > 0 && (
                 <span className="px-1.5 py-0.5 bg-white text-indigo-800 font-black text-[10px] rounded-full shadow-sm">
                   {incomeReports.length}
+                </span>
+              )}
+            </button>
+          )}
+
+          <button
+            onClick={() => onOpenSettingsModal('PLANILHA_USUARIOS')}
+            className="px-3 sm:px-3.5 py-2.5 bg-emerald-950/80 hover:bg-emerald-900 text-emerald-200 font-semibold text-xs rounded-xl border border-emerald-700/60 shadow-sm transition-all flex items-center justify-center sm:justify-start gap-1.5 cursor-pointer min-h-[40px]"
+            title="Exportar ou importar planilha Excel de e-mails, telefones e senhas dos colaboradores"
+          >
+            <FileSpreadsheet className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span className="hidden sm:inline">Planilha</span> XLS
+          </button>
+
+          {onOpenSystemLogs && (
+            <button
+              onClick={onOpenSystemLogs}
+              className="px-3 sm:px-3.5 py-2.5 bg-blue-950/80 hover:bg-blue-900 text-blue-200 font-semibold text-xs rounded-xl border border-blue-700/60 shadow-sm transition-all flex items-center justify-center sm:justify-start gap-1.5 cursor-pointer min-h-[40px]"
+              title="Consultar histórico de mensagens (WhatsApp e E-mail), logins e auditoria"
+            >
+              <History className="w-4 h-4 text-blue-400 shrink-0" />
+              <span>Histórico & Logs</span>
+              {systemLogsCount !== undefined && systemLogsCount > 0 && (
+                <span className="px-1.5 py-0.2 bg-blue-500 text-white font-black text-[10px] rounded-full">
+                  {systemLogsCount}
                 </span>
               )}
             </button>

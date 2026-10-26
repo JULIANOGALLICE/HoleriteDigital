@@ -199,6 +199,7 @@ const CONFIG_FILE = path.resolve(__dirname, 'system-config.json');
 const USERS_FILE = path.resolve(__dirname, 'users-data.json');
 const EMPLOYEES_FILE = path.resolve(__dirname, 'employees-data.json');
 const RECEIPTS_FILE = path.resolve(__dirname, 'receipts-data.json');
+const SYSTEM_LOGS_FILE = path.resolve(__dirname, 'system-logs-data.json');
 
 // 0. API: Get & Save System Configuration (Permanent Server-Side Storage)
 app.get('/api/config', (_req, res) => {
@@ -308,6 +309,46 @@ app.post('/api/receipts', (req, res) => {
     return res.status(400).json({ success: false, message: 'Array de recibos inválido.' });
   } catch (err: any) {
     console.error('Error writing receipts-data.json:', err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// API: Servidor permanente de Logs de Comunicação, Logins e Auditoria
+app.get('/api/system-logs', (_req, res) => {
+  try {
+    if (fs.existsSync(SYSTEM_LOGS_FILE)) {
+      const content = fs.readFileSync(SYSTEM_LOGS_FILE, 'utf-8');
+      const data = JSON.parse(content);
+      return res.json({ success: true, logs: Array.isArray(data) ? data : [] });
+    }
+  } catch (err: any) {
+    console.error('Error reading system-logs-data.json:', err);
+  }
+  return res.json({ success: true, logs: [] });
+});
+
+app.post('/api/system-logs', (req, res) => {
+  try {
+    const { log, logs } = req.body;
+    let existingLogs: any[] = [];
+    if (fs.existsSync(SYSTEM_LOGS_FILE)) {
+      try {
+        const content = fs.readFileSync(SYSTEM_LOGS_FILE, 'utf-8');
+        existingLogs = JSON.parse(content);
+        if (!Array.isArray(existingLogs)) existingLogs = [];
+      } catch (e) {}
+    }
+
+    if (Array.isArray(logs)) {
+      existingLogs = logs;
+    } else if (log && typeof log === 'object') {
+      existingLogs = [log, ...existingLogs.filter(l => l.id !== log.id)].slice(0, 1000);
+    }
+
+    fs.writeFileSync(SYSTEM_LOGS_FILE, JSON.stringify(existingLogs, null, 2), 'utf-8');
+    return res.json({ success: true, message: 'Log gravado com sucesso no servidor.' });
+  } catch (err: any) {
+    console.error('Error writing system-logs-data.json:', err);
     return res.status(500).json({ success: false, message: err.message });
   }
 });

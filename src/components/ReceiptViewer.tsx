@@ -24,6 +24,8 @@ interface ReceiptViewerProps {
   onTriggerDigitalSignature?: (receipt: PayReceipt) => void;
   onOpenEmailModal?: (employee: Employee, receipt: PayReceipt) => void;
   isAdmin?: boolean;
+  canSign?: boolean;
+  employerName?: string;
   certificateConfig?: DigitalCertificateA1 | null;
 }
 
@@ -34,16 +36,20 @@ export const ReceiptViewer: React.FC<ReceiptViewerProps> = ({
   onTriggerDigitalSignature,
   onOpenEmailModal,
   isAdmin = false,
+  canSign = true,
+  employerName,
   certificateConfig
 }) => {
   const [showBothCopies, setShowBothCopies] = useState(false);
   const [downloadBlockedNotice, setDownloadBlockedNotice] = useState<string | null>(null);
   const isSigned = receipt.statusAssinatura === 'ASSINADO';
+  const allowSign = !isAdmin && canSign;
 
   // Active A1 certificate resolution
   const activeCert = getActiveA1Certificate(certificateConfig);
 
   const handleSign = () => {
+    if (!allowSign) return;
     if (onTriggerDigitalSignature) {
       onTriggerDigitalSignature(receipt);
     } else if (onSignReceipt) {
@@ -72,7 +78,7 @@ export const ReceiptViewer: React.FC<ReceiptViewerProps> = ({
             <div className="flex flex-col sm:flex-row justify-between items-start gap-2">
               <div>
                 <div className="font-bold text-sm tracking-wide text-slate-950 uppercase">
-                  {receipt.empregador.razaoSocial}
+                  {employerName || receipt.empregador.razaoSocial}
                 </div>
                 <div className="flex flex-wrap gap-x-5 gap-y-1 text-[11px] text-slate-700 mt-1">
                   <span><strong>CEI/CNPJ:</strong> {receipt.empregador.cei}</span>
@@ -372,20 +378,24 @@ export const ReceiptViewer: React.FC<ReceiptViewerProps> = ({
         </div>
 
         {/* Ação Primária Touch (Min height 44px) */}
-        {!isSigned ? (
+        {!isSigned && allowSign ? (
           <button
             onClick={handleSign}
             className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-md flex items-center justify-center gap-2 cursor-pointer transition-colors min-h-[44px]"
           >
             <ShieldCheck className="w-4 h-4" /> Assinar Recibo (Liberar PDF)
           </button>
-        ) : (
+        ) : (isSigned || isAdmin) ? (
           <button
             onClick={() => downloadPayReceiptPDF(employee, receipt, activeCert)}
             className="w-full py-3 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold text-xs rounded-xl shadow-md flex items-center justify-center gap-2 cursor-pointer transition-colors min-h-[44px]"
           >
             <Download className="w-4 h-4" /> Baixar PDF Oficial
           </button>
+        ) : (
+          <div className="w-full py-2.5 px-3 bg-slate-100 text-slate-600 font-semibold text-[11px] rounded-xl text-center border border-slate-200">
+            Assinatura exclusiva pelo titular no Portal do Colaborador
+          </div>
         )}
 
         {/* Ações Secundárias Touch */}
@@ -432,8 +442,8 @@ export const ReceiptViewer: React.FC<ReceiptViewerProps> = ({
 
         {/* Buttons */}
         <div className="flex flex-wrap items-center gap-2">
-          {/* Sign Button */}
-          {!isSigned && (
+          {/* Sign Button - Somente para o próprio colaborador no Portal do Colaborador */}
+          {!isSigned && allowSign && (
             <button
               onClick={handleSign}
               className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs shadow-sm transition-colors cursor-pointer"
@@ -442,6 +452,16 @@ export const ReceiptViewer: React.FC<ReceiptViewerProps> = ({
               <ShieldCheck className="w-4 h-4" />
               Assinar Recibo
             </button>
+          )}
+
+          {!isSigned && !allowSign && (
+            <span
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 border border-slate-200 font-semibold text-[11px]"
+              title="Apenas o colaborador titular pode assinar seu próprio holerite pelo Portal do Colaborador"
+            >
+              <Lock className="w-3.5 h-3.5 text-slate-500" />
+              Assinatura exclusiva pelo Colaborador
+            </span>
           )}
 
           {/* Download PDF with A1 Digital Signature - Somente liberado após assinatura do colaborador */}
@@ -454,7 +474,7 @@ export const ReceiptViewer: React.FC<ReceiptViewerProps> = ({
               <Download className="w-4 h-4" />
               Baixar PDF (com Certificado A1)
             </button>
-          ) : (
+          ) : allowSign ? (
             <button
               onClick={() => {
                 setDownloadBlockedNotice('O download do holerite oficial em PDF com termo de quitação CLT (Art. 464) só é liberado após você assinar o recibo.');
@@ -466,7 +486,7 @@ export const ReceiptViewer: React.FC<ReceiptViewerProps> = ({
               <Lock className="w-4 h-4 text-amber-600" />
               <span>Assinar para Liberar Download PDF</span>
             </button>
-          )}
+          ) : null}
 
           {/* Print */}
           <button
@@ -503,7 +523,7 @@ export const ReceiptViewer: React.FC<ReceiptViewerProps> = ({
       </div>
 
       {/* Blocked Download Notice Banner for Collaborator when Unsigned */}
-      {!isSigned && !isAdmin && (
+      {!isSigned && allowSign && (
         <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-950 shadow-sm print:hidden animate-in fade-in">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-xs">

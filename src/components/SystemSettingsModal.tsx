@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { SystemConfig, DigitalCertificateA1 } from '../types';
+import { SystemConfig, DigitalCertificateA1, Employee, UserAccount } from '../types';
 import {
   X,
   Save,
@@ -31,7 +31,12 @@ import {
   Radio,
   Eye,
   EyeOff,
-  QrCode
+  QrCode,
+  FileSpreadsheet,
+  UploadCloud,
+  Users,
+  Check,
+  ArrowRight
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -46,6 +51,13 @@ import { auth } from '../firebase';
 import { parsePfxCertificate, getDefaultA1Certificate, saveActiveA1Certificate, getActiveA1Certificate } from '../utils/certificateA1';
 import { downloadPayReceiptPDF } from '../utils/pdfGenerator';
 import { INITIAL_EMPLOYEES, INITIAL_RECEIPTS } from '../data/initialData';
+import {
+  exportEmployeesToXLSX,
+  downloadBlankEmployeesTemplateXLSX,
+  parseAndAnalyzeSpreadsheet,
+  applySpreadsheetToEntities,
+  SpreadsheetAnalysisResult
+} from '../utils/spreadsheetService';
 
 interface SystemSettingsModalProps {
   isOpen: boolean;
@@ -53,7 +65,10 @@ interface SystemSettingsModalProps {
   config: SystemConfig;
   onSaveConfig: (updated: SystemConfig) => void;
   onClearProductionData: () => void;
-  initialTab?: 'CERTIFICADO_A1' | 'EMPRESA' | 'EMAIL_SERVER' | 'ASSINATURA' | 'COMUNICACAO' | 'DADOS';
+  initialTab?: 'CERTIFICADO_A1' | 'EMPRESA' | 'EMAIL_SERVER' | 'ASSINATURA' | 'COMUNICACAO' | 'PLANILHA_USUARIOS' | 'DADOS';
+  employees?: Employee[];
+  users?: UserAccount[];
+  onBatchUpdateEmployeesAndUsers?: (updatedEmployees: Employee[], updatedUsers: UserAccount[]) => Promise<void> | void;
 }
 
 export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
@@ -62,7 +77,10 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
   config,
   onSaveConfig,
   onClearProductionData,
-  initialTab = 'CERTIFICADO_A1'
+  initialTab = 'CERTIFICADO_A1',
+  employees = [],
+  users = [],
+  onBatchUpdateEmployeesAndUsers
 }) => {
   const [formData, setFormData] = useState<SystemConfig>(() => ({
     ...config,
@@ -81,7 +99,9 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
     evolutionApiUrl: config.evolutionApiUrl || '',
     evolutionApiKey: config.evolutionApiKey || '',
     evolutionInstance: config.evolutionInstance || '',
-    enviarPdfAutomaticoWhatsapp: config.enviarPdfAutomaticoWhatsapp !== undefined ? config.enviarPdfAutomaticoWhatsapp : true
+    enviarPdfAutomaticoWhatsapp: config.enviarPdfAutomaticoWhatsapp !== undefined ? config.enviarPdfAutomaticoWhatsapp : true,
+    exigir2FALogin: config.exigir2FALogin || false,
+    canal2FALogin: config.canal2FALogin || 'WHATSAPP'
   }));
 
   // Synchronize when config or modal visibility changes
@@ -104,16 +124,29 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
         evolutionApiUrl: config.evolutionApiUrl || '',
         evolutionApiKey: config.evolutionApiKey || '',
         evolutionInstance: config.evolutionInstance || '',
-        enviarPdfAutomaticoWhatsapp: config.enviarPdfAutomaticoWhatsapp !== undefined ? config.enviarPdfAutomaticoWhatsapp : true
+        enviarPdfAutomaticoWhatsapp: config.enviarPdfAutomaticoWhatsapp !== undefined ? config.enviarPdfAutomaticoWhatsapp : true,
+        exigir2FALogin: config.exigir2FALogin || false,
+        canal2FALogin: config.canal2FALogin || 'WHATSAPP'
       });
       setActiveTab(initialTab);
+      setSpreadsheetAnalysis(null);
+      setSpreadsheetError(null);
+      setSpreadsheetSuccess(null);
     }
   }, [isOpen, config, initialTab]);
 
-  const [activeTab, setActiveTab] = useState<'CERTIFICADO_A1' | 'EMPRESA' | 'EMAIL_SERVER' | 'ASSINATURA' | 'COMUNICACAO' | 'DADOS'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'CERTIFICADO_A1' | 'EMPRESA' | 'EMAIL_SERVER' | 'ASSINATURA' | 'COMUNICACAO' | 'PLANILHA_USUARIOS' | 'DADOS'>(initialTab);
   const [isConfirmingClear, setIsConfirmingClear] = useState(false);
   const [isTestingEmail, setIsTestingEmail] = useState(false);
   const [testEmailResult, setTestEmailResult] = useState<EmailTestResult | null>(null);
+
+  // Spreadsheet XLS Import/Export State
+  const spreadsheetInputRef = useRef<HTMLInputElement>(null);
+  const [isParsingSpreadsheet, setIsParsingSpreadsheet] = useState(false);
+  const [spreadsheetAnalysis, setSpreadsheetAnalysis] = useState<SpreadsheetAnalysisResult | null>(null);
+  const [spreadsheetError, setSpreadsheetError] = useState<string | null>(null);
+  const [spreadsheetSuccess, setSpreadsheetSuccess] = useState<string | null>(null);
+  const [isApplyingSpreadsheet, setIsApplyingSpreadsheet] = useState(false);
 
   // Evolution API / WhatsApp State
   const [isTestingWhatsapp, setIsTestingWhatsapp] = useState(false);
@@ -375,7 +408,7 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
               activeTab === 'ASSINATURA' ? 'border-blue-600 text-blue-600 bg-white font-bold' : 'border-transparent hover:text-slate-900'
             }`}
           >
-            <ShieldAlert className="w-4 h-4" /> Regras de Assinatura 2FA
+            <ShieldAlert className="w-4 h-4" /> Segurança & 2FA
           </button>
 
           <button
@@ -386,6 +419,16 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
             }`}
           >
             <Smartphone className="w-4 h-4 text-emerald-600" /> WhatsApp & Evolution API
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('PLANILHA_USUARIOS')}
+            className={`py-3 px-4 border-b-2 flex items-center gap-2 cursor-pointer transition-colors whitespace-nowrap ${
+              activeTab === 'PLANILHA_USUARIOS' ? 'border-emerald-600 text-emerald-700 bg-white font-bold shadow-xs' : 'border-transparent hover:text-slate-900'
+            }`}
+          >
+            <FileSpreadsheet className="w-4 h-4 text-emerald-600" /> Planilha de Usuários (XLS)
           </button>
 
           <button
@@ -1502,17 +1545,68 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
             </div>
           )}
 
-          {/* TAB 3: Assinatura */}
+          {/* TAB 3: Segurança & 2FA */}
           {activeTab === 'ASSINATURA' && (
             <div className="space-y-4">
+              {/* Dupla Autenticação (2FA) no Login ao Portal */}
+              <div className="bg-gradient-to-r from-blue-50/70 to-indigo-50/50 p-4 border border-blue-200 rounded-xl space-y-3 shadow-xs">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <label className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                      <Lock className="w-4 h-4 text-blue-600" />
+                      Ativar Login com Dupla Autenticação (2FA)
+                    </label>
+                    <span className="text-[11px] text-slate-600 block mt-0.5">
+                      Exige que colaboradores e gestores confirmem um código de segurança de 6 dígitos enviado por WhatsApp ou E-mail para acessar o portal.
+                    </span>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(formData.exigir2FALogin)}
+                    onChange={(e) =>
+                      setFormData({ ...formData, exigir2FALogin: e.target.checked })
+                    }
+                    className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 cursor-pointer shrink-0"
+                  />
+                </div>
+
+                {formData.exigir2FALogin && (
+                  <div className="pt-3 border-t border-blue-100 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-slate-700 font-semibold mb-1 text-[11px]">
+                        Canal para Envio do Código 2FA de Login
+                      </label>
+                      <select
+                        value={formData.canal2FALogin || 'WHATSAPP'}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            canal2FALogin: e.target.value as any
+                          })
+                        }
+                        className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                      >
+                        <option value="WHATSAPP">WhatsApp (Evolution API)</option>
+                        <option value="EMAIL">E-mail (SMTP Corporativo)</option>
+                        <option value="AMBOS">Ambos (WhatsApp e E-mail)</option>
+                      </select>
+                    </div>
+                    <div className="text-[11px] text-blue-900 flex items-center bg-blue-100/70 p-2.5 rounded-lg border border-blue-200">
+                      🔒 O código gerado expira em 10 minutos. O gestor e o colaborador receberão a notificação oficial antes do acesso ser liberado.
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 2FA para Assinatura do Holerite */}
               <div className="bg-slate-50 p-4 border border-slate-200 rounded-xl space-y-3">
                 <div className="flex items-center justify-between">
                   <div>
                     <label className="font-bold text-slate-900 text-xs block">
-                      Exigir Código de Validação 2FA para Assinatura
+                      Exigir Código de Validação 2FA para Assinatura do Holerite
                     </label>
                     <span className="text-[11px] text-slate-500">
-                      O colaborador deve inserir o código de 6 dígitos enviado por WhatsApp ou E-mail.
+                      O colaborador deve inserir o código de 6 dígitos enviado por WhatsApp ou E-mail para validar a assinatura CLT.
                     </span>
                   </div>
                   <input
@@ -1541,8 +1635,8 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
                     }
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
                   >
-                    <option value="WHATSAPP">WhatsApp (Recomendado)</option>
-                    <option value="EMAIL">E-mail</option>
+                    <option value="WHATSAPP">WhatsApp (Evolution API)</option>
+                    <option value="EMAIL">E-mail (SMTP)</option>
                     <option value="AMBOS">Escolha do Colaborador</option>
                   </select>
                 </div>
@@ -1851,6 +1945,308 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
                     ))}
                   </div>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: Planilha de Usuários (XLS) */}
+          {activeTab === 'PLANILHA_USUARIOS' && (
+            <div className="space-y-5">
+              {/* Header Banner */}
+              <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-slate-50 border border-emerald-200 rounded-2xl p-4 sm:p-5 shadow-xs">
+                <div className="flex items-start gap-3.5">
+                  <div className="p-3 rounded-xl bg-emerald-600 text-white shrink-0 shadow-sm mt-0.5">
+                    <FileSpreadsheet className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="font-bold text-slate-900 text-sm">
+                        Configuração de Usuários por Planilha Excel (XLS / XLSX)
+                      </h4>
+                      <span className="text-[10px] bg-emerald-100 text-emerald-800 font-extrabold px-2 py-0.5 rounded-full border border-emerald-300">
+                        Importação & Exportação Rápida
+                      </span>
+                    </div>
+                    <p className="text-[11.5px] text-slate-600 mt-1 leading-relaxed">
+                      Gerencie e complete em massa o <strong>E-mail</strong>, <strong>Telefone/WhatsApp</strong> e a <strong>Senha Inicial</strong> de todos os colaboradores do cartório/empresa diretamente em uma planilha Excel, sem precisar cadastrar um por um manualmente.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Seção 1: Exportar Planilha */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-4 shadow-xs">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <div className="flex items-center gap-2">
+                    <Download className="w-4 h-4 text-emerald-600" />
+                    <div>
+                      <h4 className="font-bold text-slate-900 text-xs">1. Exportar Planilha Atual da Folha</h4>
+                      <p className="text-[11px] text-slate-500">
+                        Baixe o arquivo com a lista de {employees.length} colaboradores já cadastrados para preencher os dados faltantes.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-3 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      exportEmployeesToXLSX(employees, users);
+                      confetti({ particleCount: 40, spread: 50, origin: { y: 0.6 } });
+                    }}
+                    className="flex-1 py-3 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer"
+                  >
+                    <Download className="w-4 h-4" />
+                    Exportar Base Completa ({employees.length} Colaboradores) (.xlsx)
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => downloadBlankEmployeesTemplateXLSX()}
+                    className="py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-semibold text-xs flex items-center justify-center gap-2 border border-slate-200 transition-all cursor-pointer"
+                  >
+                    <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                    Baixar Modelo em Branco (.xlsx)
+                  </button>
+                </div>
+              </div>
+
+              {/* Seção 2: Importar Planilha Preenchida */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-4 shadow-xs">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <div className="flex items-center gap-2">
+                    <UploadCloud className="w-4 h-4 text-blue-600" />
+                    <div>
+                      <h4 className="font-bold text-slate-900 text-xs">2. Importar Planilha Preenchida (.xlsx / .xls)</h4>
+                      <p className="text-[11px] text-slate-500">
+                        Envie o arquivo preenchido para atualizar os e-mails, telefones e senhas dos colaboradores automaticamente.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Dropzone / Upload Box */}
+                <input
+                  type="file"
+                  ref={spreadsheetInputRef}
+                  accept=".xlsx, .xls, .csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    setIsParsingSpreadsheet(true);
+                    setSpreadsheetError(null);
+                    setSpreadsheetSuccess(null);
+                    try {
+                      const analysis = await parseAndAnalyzeSpreadsheet(file, employees, users);
+                      setSpreadsheetAnalysis(analysis);
+                      if (analysis.totalRows === 0) {
+                        setSpreadsheetError('Nenhuma linha de dados encontrada na planilha.');
+                      }
+                    } catch (err: any) {
+                      setSpreadsheetError(err?.message || 'Falha ao processar arquivo de planilha.');
+                      setSpreadsheetAnalysis(null);
+                    } finally {
+                      setIsParsingSpreadsheet(false);
+                      if (spreadsheetInputRef.current) {
+                        spreadsheetInputRef.current.value = '';
+                      }
+                    }
+                  }}
+                />
+
+                {!spreadsheetAnalysis && (
+                  <div
+                    onClick={() => spreadsheetInputRef.current?.click()}
+                    className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all ${
+                      isParsingSpreadsheet
+                        ? 'border-emerald-400 bg-emerald-50/50'
+                        : 'border-slate-300 hover:border-emerald-500 hover:bg-emerald-50/20 bg-slate-50/60'
+                    }`}
+                  >
+                    {isParsingSpreadsheet ? (
+                      <div className="flex flex-col items-center justify-center space-y-2">
+                        <RefreshCw className="w-8 h-8 text-emerald-600 animate-spin" />
+                        <p className="font-bold text-slate-800 text-xs">Processando e analisando planilha...</p>
+                        <p className="text-[11px] text-slate-500">Mapeando matrículas, e-mails, telefones e senhas...</p>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center space-y-2">
+                        <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center shadow-xs">
+                          <FileSpreadsheet className="w-6 h-6" />
+                        </div>
+                        <p className="font-bold text-slate-800 text-xs">
+                          Clique aqui para selecionar a planilha (.xlsx, .xls ou .csv)
+                        </p>
+                        <p className="text-[11px] text-slate-500 max-w-md">
+                          O sistema irá comparar os registros pela <strong>Matrícula</strong> ou <strong>CPF</strong> e identificar quais colaboradores terão e-mail, telefone ou senha atualizados.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Error Banner */}
+                {spreadsheetError && (
+                  <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600" />
+                    <span>{spreadsheetError}</span>
+                  </div>
+                )}
+
+                {/* Success Banner */}
+                {spreadsheetSuccess && (
+                  <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2 shadow-xs">
+                    <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                    <span className="font-semibold">{spreadsheetSuccess}</span>
+                  </div>
+                )}
+
+                {/* Analysis Preview Section */}
+                {spreadsheetAnalysis && (
+                  <div className="space-y-4 pt-2">
+                    {/* KPI metrics from analysis */}
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+                      <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-center">
+                        <span className="text-[10px] text-slate-500 uppercase font-bold block">Linhas</span>
+                        <span className="text-base font-extrabold text-slate-900">{spreadsheetAnalysis.totalRows}</span>
+                      </div>
+                      <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-200 text-center">
+                        <span className="text-[10px] text-emerald-700 uppercase font-bold block">Vinculados</span>
+                        <span className="text-base font-extrabold text-emerald-800">{spreadsheetAnalysis.matchedCount}</span>
+                      </div>
+                      <div className="bg-blue-50 p-3 rounded-xl border border-blue-200 text-center">
+                        <span className="text-[10px] text-blue-700 uppercase font-bold block">Novos E-mails</span>
+                        <span className="text-base font-extrabold text-blue-800">+{spreadsheetAnalysis.newEmailsCount}</span>
+                      </div>
+                      <div className="bg-teal-50 p-3 rounded-xl border border-teal-200 text-center">
+                        <span className="text-[10px] text-teal-700 uppercase font-bold block">Novos WhatsApp</span>
+                        <span className="text-base font-extrabold text-teal-800">+{spreadsheetAnalysis.newPhonesCount}</span>
+                      </div>
+                      <div className="bg-amber-50 p-3 rounded-xl border border-amber-200 text-center col-span-2 sm:col-span-1">
+                        <span className="text-[10px] text-amber-700 uppercase font-bold block">Novas Senhas</span>
+                        <span className="text-base font-extrabold text-amber-800">+{spreadsheetAnalysis.newPasswordsCount}</span>
+                      </div>
+                    </div>
+
+                    {/* Table of parsed employees and preview diff */}
+                    <div className="border border-slate-200 rounded-xl overflow-hidden">
+                      <div className="bg-slate-100/80 px-4 py-2 border-b border-slate-200 flex justify-between items-center text-[11px] font-bold text-slate-700">
+                        <span>Pré-visualização das Alterações Detectadas</span>
+                        <span className="text-slate-500 font-normal">
+                          {spreadsheetAnalysis.changes.filter(c => c.hasChange).length} com alterações pendentes
+                        </span>
+                      </div>
+
+                      <div className="max-h-60 overflow-y-auto divide-y divide-slate-100 text-[11px]">
+                        {spreadsheetAnalysis.changes.map((change, idx) => (
+                          <div
+                            key={idx}
+                            className={`p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${
+                              change.hasChange ? 'bg-emerald-50/30' : 'bg-white'
+                            }`}
+                          >
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-slate-900 truncate">{change.nome}</span>
+                                <span className="font-mono text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">
+                                  Matrícula: {change.matricula || 'N/A'}
+                                </span>
+                                {change.hasChange && (
+                                  <span className="text-[9.5px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded-full">
+                                    Atualização
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10.5px] text-slate-500 mt-1">
+                                {change.newEmail && (
+                                  <span className={change.newEmail !== change.oldEmail ? 'text-blue-700 font-medium' : ''}>
+                                    ✉️ {change.newEmail}
+                                  </span>
+                                )}
+                                {change.newPhone && (
+                                  <span className={change.newPhone !== change.oldPhone ? 'text-emerald-700 font-medium' : ''}>
+                                    📱 {change.newPhone}
+                                  </span>
+                                )}
+                                {change.newSenha && (
+                                  <span className="text-amber-800 font-mono font-medium">
+                                    🔑 Senha: {change.newSenha}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="shrink-0 flex items-center gap-1.5">
+                              {change.isMatched ? (
+                                <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded font-semibold flex items-center gap-1">
+                                  <Check className="w-3 h-3 text-emerald-600" /> Colaborador Localizado
+                                </span>
+                              ) : (
+                                <span className="text-[10px] bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded font-semibold">
+                                  Novo Registro
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Action buttons */}
+                    <div className="flex flex-col sm:flex-row items-center justify-end gap-2.5 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSpreadsheetAnalysis(null);
+                          setSpreadsheetError(null);
+                        }}
+                        className="w-full sm:w-auto px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-semibold text-xs hover:bg-slate-100 cursor-pointer transition-colors"
+                      >
+                        Carregar Outra Planilha
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={isApplyingSpreadsheet}
+                        onClick={async () => {
+                          if (!spreadsheetAnalysis || !onBatchUpdateEmployeesAndUsers) return;
+                          setIsApplyingSpreadsheet(true);
+                          try {
+                            const { updatedEmployees, updatedUsers } = applySpreadsheetToEntities(
+                              spreadsheetAnalysis,
+                              employees,
+                              users
+                            );
+                            await onBatchUpdateEmployeesAndUsers(updatedEmployees, updatedUsers);
+                            confetti({ particleCount: 70, spread: 60, origin: { y: 0.6 } });
+                            setSpreadsheetSuccess(
+                              `Sucesso! Base atualizada com ${spreadsheetAnalysis.newEmailsCount} e-mails, ${spreadsheetAnalysis.newPhonesCount} telefones e ${spreadsheetAnalysis.newPasswordsCount} senhas iniciais.`
+                            );
+                          } catch (err: any) {
+                            setSpreadsheetError(err?.message || 'Erro ao aplicar alterações na base.');
+                          } finally {
+                            setIsApplyingSpreadsheet(false);
+                          }
+                        }}
+                        className="w-full sm:w-auto px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs shadow-md flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-50"
+                      >
+                        {isApplyingSpreadsheet ? (
+                          <>
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                            Aplicando Alterações...
+                          </>
+                        ) : (
+                          <>
+                            <Check className="w-4 h-4" />
+                            Confirmar e Gravar Alterações na Base
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}

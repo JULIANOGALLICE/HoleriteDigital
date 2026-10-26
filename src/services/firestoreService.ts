@@ -12,7 +12,7 @@ import {
   where
 } from 'firebase/firestore';
 import { db, auth } from '../firebase';
-import { Employee, PayReceipt, SystemConfig, SignatureVerification, UserAccount, MedicalCertificate, IncomeReport } from '../types';
+import { Employee, PayReceipt, SystemConfig, SignatureVerification, UserAccount, MedicalCertificate, IncomeReport, SystemLog } from '../types';
 
 export enum OperationType {
   CREATE = 'create',
@@ -73,7 +73,9 @@ export const DEFAULT_CONFIG: SystemConfig = {
   emailTemplateCorpo: 'Olá, {nome}. Seu recibo de pagamento de {mesAno} já está disponível para visualização e download em PDF no portal do colaborador.',
   diasPrazoAssinatura: 5,
   certificadoA1: getDefaultA1Certificate(),
-  exigirCompletarCadastroPrimeiroAcesso: true
+  exigirCompletarCadastroPrimeiroAcesso: true,
+  exigir2FALogin: false,
+  canal2FALogin: 'WHATSAPP'
 };
 
 // 1. Employees
@@ -118,6 +120,27 @@ export async function saveEmployeeFirestore(employee: Employee): Promise<void> {
     await setDoc(doc(db, 'employees', employee.codigo), cleanUndefined(employee), { merge: true });
   } catch (error) {
     console.warn('saveEmployeeFirestore notice:', error);
+  }
+}
+
+export async function saveEmployeesBatchFirestore(employeesList: Employee[]): Promise<void> {
+  if (!employeesList || employeesList.length === 0) return;
+  const CHUNK_SIZE = 150;
+  for (let i = 0; i < employeesList.length; i += CHUNK_SIZE) {
+    const chunk = employeesList.slice(i, i + CHUNK_SIZE);
+    try {
+      const batch = writeBatch(db);
+      chunk.forEach(emp => {
+        const ref = doc(db, 'employees', emp.codigo);
+        batch.set(ref, cleanUndefined(emp), { merge: true });
+      });
+      await batch.commit();
+    } catch (batchError) {
+      console.warn('saveEmployeesBatchFirestore chunk error, fallback to individual sets:', batchError);
+      await Promise.allSettled(
+        chunk.map(emp => setDoc(doc(db, 'employees', emp.codigo), cleanUndefined(emp), { merge: true }))
+      );
+    }
   }
 }
 
@@ -623,3 +646,69 @@ export async function deleteIncomeReportsBatchFirestore(ids: string[]): Promise<
     await Promise.allSettled(ids.map(id => deleteDoc(doc(db, 'incomeReports', id))));
   }
 }
+
+// ==========================================
+// HISTÓRICO DE AUDITORIA E LOGS DO SISTEMA
+// ==========================================
+
+export async function saveSystemLogFirestore(log: SystemLog): Promise<void> {
+  const logId = log.id || `log-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+  const data = cleanUndefined({ ...log, id: logId });
+  try {
+    await setDoc(doc(db, 'systemLogs', logId), data, { merge: true });
+  } catch (error) {
+    console.warn('saveSystemLogFirestore error:', error);
+  }
+}
+
+export async function saveSystemLogsBatchFirestore(logs: SystemLog[]): Promise<void> {
+  if (!logs || logs.length === 0) return;
+  const CHUNK_SIZE = 150;
+  for (let i = 0; i < logs.length; i += CHUNK_SIZE) {
+    const chunk = logs.slice(i, i + CHUNK_SIZE);
+    try {
+      const batch = writeBatch(db);
+      chunk.forEach(log => {
+        const logId = log.id || `log-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+        batch.set(doc(db, 'systemLogs', logId), cleanUndefined({ ...log, id: logId }), { merge: true });
+      });
+      await batch.commit();
+    } catch (e) {
+      console.warn('saveSystemLogsBatchFirestore error fallback:', e);
+      await Promise.allSettled(chunk.map(l => saveSystemLogFirestore(l)));
+    }
+  }
+}
+
+export function subscribeSystemLogs(callback: (logs: SystemLog[]) => void, onError?: (err: any) => void): () => void {
+  return onSnapshot(
+    collection(db, 'systemLogs'),
+    (snap) => {
+      const logs: SystemLog[] = [];
+      snap.forEach((d) => {
+        logs.push({ id: d.id, ...d.data() } as SystemLog);
+      });
+      // Sort newest first
+      logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      callback(logs);
+    },
+    (err) => {
+      console.warn('subscribeSystemLogs error:', err);
+      if (onError) onError(err);
+    }
+  );
+}
+
+export async function clearSystemLogsFirestore(): Promise<void> {
+  try {
+    const snap = await getDocs(collection(db, 'systemLogs'));
+    const batch = writeBatch(db);
+    snap.forEach((d) => {
+      batch.delete(d.ref);
+    });
+    await batch.commit();
+  } catch (error) {
+    console.warn('clearSystemLogsFirestore error:', error);
+  }
+}
+
