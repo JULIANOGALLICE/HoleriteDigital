@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Employee, PayReceipt, SystemConfig, UserAccount, MedicalCertificate, IncomeReport, SystemLog } from './types';
 import { INITIAL_EMPLOYEES, INITIAL_RECEIPTS, INITIAL_USERS } from './data/initialData';
 import { SAMPLE_INCOME_REPORTS } from './data/sampleIncomeReports';
@@ -78,8 +78,37 @@ const STORAGE_KEY_EMPLOYEES = 'holerite_employees_v2';
 const STORAGE_KEY_RECEIPTS = 'holerite_receipts_v2';
 const STORAGE_KEY_USERS = 'holerite_users_v2';
 const STORAGE_KEY_INCOME_REPORTS = 'holerite_income_reports_v2';
+const STORAGE_KEY_DELETED_EMPLOYEES = 'holerite_deleted_employees_v2';
+const STORAGE_KEY_DELETED_RECEIPTS = 'holerite_deleted_receipts_v2';
+const STORAGE_KEY_DELETED_USERS = 'holerite_deleted_users_v2';
+const STORAGE_KEY_DELETED_IRPF = 'holerite_deleted_irpf_v2';
+
+function loadTombstoneSet(key: string, defaultItems: string[] = []): Set<string> {
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return new Set<string>([...defaultItems, ...parsed.map(String)]);
+      }
+    }
+  } catch (e) {}
+  return new Set<string>(defaultItems);
+}
+
+function saveTombstoneSet(key: string, set: Set<string>) {
+  try {
+    localStorage.setItem(key, JSON.stringify(Array.from(set)));
+  } catch (e) {}
+}
 
 export default function App() {
+  // Tombstone registries to prevent deleted records from being resurrected by snapshots or caches
+  const deletedEmployeesRef = useRef<Set<string>>(loadTombstoneSet(STORAGE_KEY_DELETED_EMPLOYEES, ['80']));
+  const deletedReceiptsRef = useRef<Set<string>>(loadTombstoneSet(STORAGE_KEY_DELETED_RECEIPTS));
+  const deletedUsersRef = useRef<Set<string>>(loadTombstoneSet(STORAGE_KEY_DELETED_USERS, ['user-80', 'user-colab-80']));
+  const deletedIrpfRef = useRef<Set<string>>(loadTombstoneSet(STORAGE_KEY_DELETED_IRPF));
+
   // Current user account session: Starts as null so the initial screen shows the Login Screen
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(null);
 
@@ -91,26 +120,47 @@ export default function App() {
 
   // Users state (dynamically managed by Gestor)
   const [users, setUsers] = useState<UserAccount[]>(() => {
+    const delUsers = loadTombstoneSet(STORAGE_KEY_DELETED_USERS, ['user-80', 'user-colab-80']);
+    const delEmps = loadTombstoneSet(STORAGE_KEY_DELETED_EMPLOYEES, ['80']);
     try {
       const saved = localStorage.getItem(STORAGE_KEY_USERS);
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed: UserAccount[] = JSON.parse(saved);
+        return parsed.filter(u => {
+          const empCode = String(u.employeeCodigo || '').trim();
+          if (u.uid && delUsers.has(u.uid)) return false;
+          if (u.role === 'COLABORADOR' && empCode && delEmps.has(empCode)) return false;
+          return true;
+        });
+      }
     } catch (e) {}
     return INITIAL_USERS;
   });
 
   // Core state synced with Firebase Firestore
   const [employees, setEmployees] = useState<Employee[]>(() => {
+    const delEmps = loadTombstoneSet(STORAGE_KEY_DELETED_EMPLOYEES, ['80']);
     try {
       const saved = localStorage.getItem(STORAGE_KEY_EMPLOYEES);
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed: Employee[] = JSON.parse(saved);
+        return parsed.filter(e => !delEmps.has(String(e.codigo).trim()));
+      }
     } catch (e) {}
-    return INITIAL_EMPLOYEES;
+    return INITIAL_EMPLOYEES.filter(e => !delEmps.has(String(e.codigo).trim()));
   });
 
   const [receipts, setReceipts] = useState<PayReceipt[]>(() => {
+    const delRecs = loadTombstoneSet(STORAGE_KEY_DELETED_RECEIPTS);
+    const delEmps = loadTombstoneSet(STORAGE_KEY_DELETED_EMPLOYEES, ['80']);
     try {
       const saved = localStorage.getItem(STORAGE_KEY_RECEIPTS);
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed: PayReceipt[] = JSON.parse(saved);
+        return parsed.filter(
+          r => !delRecs.has(r.id) && !delEmps.has(String(r.employeeCodigo).trim())
+        );
+      }
     } catch (e) {}
     return INITIAL_RECEIPTS;
   });
@@ -214,15 +264,24 @@ export default function App() {
       })
       .catch(() => {});
 
+    // Ensure tombstones are persisted and cleaned in Firestore on boot
+    saveTombstoneSet(STORAGE_KEY_DELETED_EMPLOYEES, deletedEmployeesRef.current);
+    saveTombstoneSet(STORAGE_KEY_DELETED_USERS, deletedUsersRef.current);
+    deletedEmployeesRef.current.forEach(code => {
+      deleteEmployeeFirestore(code).catch(() => {});
+    });
+
     // Fetch permanent server-side backups for users, employees, and receipts
     fetch('/api/users')
       .then(res => res.json())
       .then(data => {
         if (data?.success && Array.isArray(data.users) && data.users.length > 0) {
-          setUsers(prev => {
+          setUsers(() => {
             const map = new Map<string, UserAccount>();
-            prev.forEach(u => map.set(u.uid || (u.employeeCodigo ? `user-${u.employeeCodigo}` : u.email.toLowerCase()), u));
             data.users.forEach((u: UserAccount) => {
+              const empCode = String(u.employeeCodigo || '').trim();
+              if (u.uid && deletedUsersRef.current.has(u.uid)) return;
+              if (u.role === 'COLABORADOR' && empCode && deletedEmployeesRef.current.has(empCode)) return;
               const key = u.uid || (u.employeeCodigo ? `user-${u.employeeCodigo}` : u.email.toLowerCase());
               map.set(key, u);
             });
@@ -238,10 +297,14 @@ export default function App() {
       .then(res => res.json())
       .then(data => {
         if (data?.success && Array.isArray(data.employees) && data.employees.length > 0) {
-          setEmployees(prev => {
+          setEmployees(() => {
             const map = new Map<string, Employee>();
-            prev.forEach(e => map.set(e.codigo, e));
-            data.employees.forEach((e: Employee) => map.set(e.codigo, e));
+            data.employees.forEach((e: Employee) => {
+              const code = String(e.codigo).trim();
+              if (!deletedEmployeesRef.current.has(code)) {
+                map.set(code, { ...e, codigo: code });
+              }
+            });
             const list = Array.from(map.values());
             try { localStorage.setItem(STORAGE_KEY_EMPLOYEES, JSON.stringify(list)); } catch (e) {}
             return list;
@@ -253,11 +316,15 @@ export default function App() {
     fetch('/api/receipts')
       .then(res => res.json())
       .then(data => {
-        if (data?.success && Array.isArray(data.receipts) && data.receipts.length > 0) {
-          setReceipts(prev => {
+        if (data?.success && Array.isArray(data.receipts)) {
+          setReceipts(() => {
             const map = new Map<string, PayReceipt>();
-            prev.forEach(r => map.set(r.id, r));
-            data.receipts.forEach((r: PayReceipt) => map.set(r.id, r));
+            data.receipts.forEach((r: PayReceipt) => {
+              const empCode = String(r.employeeCodigo).trim();
+              if (!deletedReceiptsRef.current.has(r.id) && !deletedEmployeesRef.current.has(empCode)) {
+                map.set(r.id, r);
+              }
+            });
             const list = Array.from(map.values());
             try { localStorage.setItem(STORAGE_KEY_RECEIPTS, JSON.stringify(list)); } catch (e) {}
             return list;
@@ -287,18 +354,27 @@ export default function App() {
       .catch(() => {});
   }, []);
 
-  // 2. Setup Firestore Realtime Listeners with non-destructive merge
+  // 2. Setup Firestore Realtime Listeners (respecting deleted tombstones, without re-uploading deleted items)
   useEffect(() => {
     const unsubEmployees = subscribeEmployees((remoteEmployees) => {
       if (remoteEmployees && remoteEmployees.length > 0) {
-        setEmployees(prevEmployees => {
+        // Clean up any Firestore docs that were marked as deleted
+        remoteEmployees.forEach(e => {
+          const code = String(e.codigo).trim();
+          if (deletedEmployeesRef.current.has(code)) {
+            deleteEmployeeFirestore(code, e.id).catch(() => {});
+          }
+        });
+
+        const validRemote = remoteEmployees.filter(
+          e => !deletedEmployeesRef.current.has(String(e.codigo).trim())
+        );
+
+        setEmployees(() => {
           const map = new Map<string, Employee>();
-          remoteEmployees.forEach(e => map.set(e.codigo, e));
-          prevEmployees.forEach(e => {
-            if (!map.has(e.codigo)) {
-              map.set(e.codigo, e);
-              saveEmployeeFirestore(e).catch(() => {});
-            }
+          validRemote.forEach(e => {
+            const code = String(e.codigo).trim();
+            map.set(code, { ...e, codigo: code });
           });
           const merged = Array.from(map.values());
           try {
@@ -310,22 +386,29 @@ export default function App() {
     });
 
     const unsubReceipts = subscribeReceipts((remoteReceipts) => {
-      if (remoteReceipts && remoteReceipts.length > 0) {
-        setReceipts(prevReceipts => {
-          const map = new Map<string, PayReceipt>();
-          remoteReceipts.forEach(r => map.set(r.id, r));
-          prevReceipts.forEach(r => {
-            if (!map.has(r.id)) {
-              map.set(r.id, r);
-              saveReceiptFirestore(r).catch(() => {});
-            }
-          });
-          const merged = Array.from(map.values());
-          try {
-            localStorage.setItem(STORAGE_KEY_RECEIPTS, JSON.stringify(merged));
-          } catch (e) {}
-          return merged;
+      if (remoteReceipts) {
+        remoteReceipts.forEach(r => {
+          const empCode = String(r.employeeCodigo).trim();
+          if (deletedReceiptsRef.current.has(r.id) || deletedEmployeesRef.current.has(empCode)) {
+            deleteReceiptFirestore(r.id).catch(() => {});
+          }
         });
+
+        const validRemote = remoteReceipts.filter(
+          r => !deletedReceiptsRef.current.has(r.id) && !deletedEmployeesRef.current.has(String(r.employeeCodigo).trim())
+        );
+
+        if (validRemote.length > 0 || remoteReceipts.length === 0) {
+          setReceipts(() => {
+            const map = new Map<string, PayReceipt>();
+            validRemote.forEach(r => map.set(r.id, r));
+            const merged = Array.from(map.values());
+            try {
+              localStorage.setItem(STORAGE_KEY_RECEIPTS, JSON.stringify(merged));
+            } catch (e) {}
+            return merged;
+          });
+        }
       }
     });
 
@@ -357,24 +440,39 @@ export default function App() {
 
     const unsubUsers = subscribeUsers((remoteUsers) => {
       if (remoteUsers && remoteUsers.length > 0) {
+        remoteUsers.forEach(u => {
+          const empCode = String(u.employeeCodigo || '').trim();
+          if (
+            (u.uid && deletedUsersRef.current.has(u.uid)) ||
+            (u.role === 'COLABORADOR' && empCode && deletedEmployeesRef.current.has(empCode))
+          ) {
+            deleteUserAccountFirestore(u.uid, empCode).catch(() => {});
+          }
+        });
+
+        const validRemote = remoteUsers.filter(u => {
+          const empCode = String(u.employeeCodigo || '').trim();
+          if (u.uid && deletedUsersRef.current.has(u.uid)) return false;
+          if (u.role === 'COLABORADOR' && empCode && deletedEmployeesRef.current.has(empCode)) return false;
+          return true;
+        });
+
         setUsers(prevUsers => {
           const map = new Map<string, UserAccount>();
 
-          // First add all remote users from Firestore
-          remoteUsers.forEach(u => {
+          validRemote.forEach(u => {
             const key = u.uid || (u.employeeCodigo ? `user-${u.employeeCodigo}` : u.email.toLowerCase());
             map.set(key, u);
           });
 
-          // Prevent deletion: preserve any local users not yet synced or with passwords configured
+          // Preserve local passwords if remote password is empty, ONLY for non-deleted users
           prevUsers.forEach(u => {
+            const empCode = String(u.employeeCodigo || '').trim();
+            if (u.uid && deletedUsersRef.current.has(u.uid)) return;
+            if (u.role === 'COLABORADOR' && empCode && deletedEmployeesRef.current.has(empCode)) return;
             const key = u.uid || (u.employeeCodigo ? `user-${u.employeeCodigo}` : u.email.toLowerCase());
             const existing = map.get(key);
-            if (!existing) {
-              map.set(key, u);
-              saveUserAccount(u).catch(() => {});
-            } else if (u.senha && (!existing.senha || existing.senha.trim() === '')) {
-              // Local has configured password, keep it and sync to Firestore
+            if (existing && u.senha && (!existing.senha || existing.senha.trim() === '')) {
               const merged = { ...existing, senha: u.senha };
               map.set(key, merged);
               saveUserAccount(merged).catch(() => {});
@@ -387,14 +485,6 @@ export default function App() {
           } catch (e) {}
           return mergedList;
         });
-      } else {
-        // If Firestore has 0 users, seed it with initial/local users
-        setUsers(prevUsers => {
-          if (prevUsers.length > 0) {
-            saveUsersBatchFirestore(prevUsers).catch(() => {});
-          }
-          return prevUsers;
-        });
       }
     });
 
@@ -403,9 +493,21 @@ export default function App() {
     });
 
     const unsubIncome = subscribeToIncomeReports((remoteReports) => {
-      setIncomeReports(remoteReports);
+      remoteReports.forEach(r => {
+        const bCod = String(r.beneficiario?.employeeCodigo || '').trim();
+        if (deletedIrpfRef.current.has(r.id) || (bCod && deletedEmployeesRef.current.has(bCod))) {
+          deleteIncomeReportFirestore(r.id).catch(() => {});
+        }
+      });
+      const validReports = remoteReports.filter(r => {
+        const bCod = String(r.beneficiario?.employeeCodigo || '').trim();
+        if (deletedIrpfRef.current.has(r.id)) return false;
+        if (bCod && deletedEmployeesRef.current.has(bCod)) return false;
+        return true;
+      });
+      setIncomeReports(validReports);
       try {
-        localStorage.setItem(STORAGE_KEY_INCOME_REPORTS, JSON.stringify(remoteReports));
+        localStorage.setItem(STORAGE_KEY_INCOME_REPORTS, JSON.stringify(validReports));
       } catch (e) {}
     });
 
@@ -656,11 +758,26 @@ export default function App() {
   };
 
   const handleSaveEmployee = async (updatedEmployee: Employee) => {
-    setEmployees(prev =>
-      prev.map(emp => (emp.codigo === updatedEmployee.codigo ? updatedEmployee : emp))
-    );
+    const cleanCode = String(updatedEmployee.codigo).trim();
+    if (deletedEmployeesRef.current.has(cleanCode)) {
+      deletedEmployeesRef.current.delete(cleanCode);
+      saveTombstoneSet(STORAGE_KEY_DELETED_EMPLOYEES, deletedEmployeesRef.current);
+    }
+
+    setEmployees(prev => {
+      const updated = prev.map(emp => (String(emp.codigo).trim() === cleanCode ? { ...updatedEmployee, codigo: cleanCode } : emp));
+      try {
+        localStorage.setItem(STORAGE_KEY_EMPLOYEES, JSON.stringify(updated));
+      } catch (e) {}
+      fetch('/api/employees', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employees: updated })
+      }).catch(() => {});
+      return updated;
+    });
     try {
-      await saveEmployeeFirestore(updatedEmployee);
+      await saveEmployeeFirestore({ ...updatedEmployee, codigo: cleanCode });
     } catch (e) {
       console.warn('Saved in local cache');
     }
@@ -671,11 +788,28 @@ export default function App() {
     let finalEmployees: Employee[] = [];
     let finalReceipts: PayReceipt[] = [];
 
+    // Un-tombstone any re-imported employees or receipts
+    newOrUpdatedEmployees.forEach(emp => {
+      const code = String(emp.codigo).trim();
+      deletedEmployeesRef.current.delete(code);
+      deletedUsersRef.current.delete(`user-${code}`);
+      deletedUsersRef.current.delete(`user-colab-${code}`);
+    });
+    newReceipts.forEach(rec => {
+      deletedReceiptsRef.current.delete(rec.id);
+    });
+    saveTombstoneSet(STORAGE_KEY_DELETED_EMPLOYEES, deletedEmployeesRef.current);
+    saveTombstoneSet(STORAGE_KEY_DELETED_USERS, deletedUsersRef.current);
+    saveTombstoneSet(STORAGE_KEY_DELETED_RECEIPTS, deletedReceiptsRef.current);
+
     // Merge employees by codigo
     setEmployees(prev => {
       const map = new Map<string, Employee>();
-      prev.forEach(emp => map.set(emp.codigo, emp));
-      newOrUpdatedEmployees.forEach(emp => map.set(emp.codigo, emp));
+      prev.forEach(emp => map.set(String(emp.codigo).trim(), emp));
+      newOrUpdatedEmployees.forEach(emp => {
+        const code = String(emp.codigo).trim();
+        map.set(code, { ...emp, codigo: code });
+      });
       finalEmployees = Array.from(map.values());
       try {
         localStorage.setItem(STORAGE_KEY_EMPLOYEES, JSON.stringify(finalEmployees));
@@ -821,6 +955,15 @@ export default function App() {
     updatedEmployees: Employee[],
     updatedUsers: UserAccount[]
   ) => {
+    updatedEmployees.forEach(emp => {
+      deletedEmployeesRef.current.delete(String(emp.codigo).trim());
+    });
+    updatedUsers.forEach(u => {
+      if (u.uid) deletedUsersRef.current.delete(u.uid);
+    });
+    saveTombstoneSet(STORAGE_KEY_DELETED_EMPLOYEES, deletedEmployeesRef.current);
+    saveTombstoneSet(STORAGE_KEY_DELETED_USERS, deletedUsersRef.current);
+
     setEmployees(updatedEmployees);
     try {
       localStorage.setItem(STORAGE_KEY_EMPLOYEES, JSON.stringify(updatedEmployees));
@@ -912,6 +1055,11 @@ export default function App() {
   };
 
   const handleSaveUser = async (userToSave: UserAccount) => {
+    if (userToSave.uid) {
+      deletedUsersRef.current.delete(userToSave.uid);
+      saveTombstoneSet(STORAGE_KEY_DELETED_USERS, deletedUsersRef.current);
+    }
+
     let nextUsersList: UserAccount[] = [];
     setUsers(prev => {
       const idx = prev.findIndex(u => u.uid === userToSave.uid);
@@ -967,6 +1115,9 @@ export default function App() {
   };
 
   const handleDeleteUser = async (uid: string) => {
+    deletedUsersRef.current.add(uid);
+    saveTombstoneSet(STORAGE_KEY_DELETED_USERS, deletedUsersRef.current);
+
     let nextList: UserAccount[] = [];
     setUsers(prev => {
       const updated = prev.filter(u => u.uid !== uid);
@@ -1050,11 +1201,15 @@ export default function App() {
   const handleSaveIncomeReports = async (newReports: IncomeReport[]) => {
     try {
       const nowIso = new Date().toISOString();
-      const stampedReports: IncomeReport[] = newReports.map(r => ({
-        ...r,
-        enviadoEm: r.enviadoEm || nowIso,
-        canalEnvio: r.canalEnvio || 'PORTAL'
-      }));
+      const stampedReports: IncomeReport[] = newReports.map(r => {
+        deletedIrpfRef.current.delete(r.id);
+        return {
+          ...r,
+          enviadoEm: r.enviadoEm || nowIso,
+          canalEnvio: r.canalEnvio || 'PORTAL'
+        };
+      });
+      saveTombstoneSet(STORAGE_KEY_DELETED_IRPF, deletedIrpfRef.current);
 
       await saveIncomeReportsBatchFirestore(stampedReports);
       setIncomeReports(prev => {
@@ -1094,6 +1249,9 @@ export default function App() {
   };
 
   const handleDeleteIncomeReport = async (id: string) => {
+    deletedIrpfRef.current.add(id);
+    saveTombstoneSet(STORAGE_KEY_DELETED_IRPF, deletedIrpfRef.current);
+
     const targetReport = incomeReports.find(r => r.id === id);
     if (targetReport) {
       recordDeleteIncomeReportEvent(currentUser, targetReport).catch(() => {});
@@ -1126,6 +1284,9 @@ export default function App() {
     const count = toDelete.length;
     if (count === 0) return;
 
+    toDelete.forEach(r => deletedIrpfRef.current.add(r.id));
+    saveTombstoneSet(STORAGE_KEY_DELETED_IRPF, deletedIrpfRef.current);
+
     recordBatchDeleteIncomeReportsEvent(currentUser, anoCalendario, count).catch(() => {});
 
     // Remove do estado local e localStorage imediatamente
@@ -1152,6 +1313,9 @@ export default function App() {
 
   // Exclusão individual de holerite
   const handleDeleteReceipt = async (receipt: PayReceipt, employee?: Employee) => {
+    deletedReceiptsRef.current.add(receipt.id);
+    saveTombstoneSet(STORAGE_KEY_DELETED_RECEIPTS, deletedReceiptsRef.current);
+
     setReceipts(prev => {
       const filtered = prev.filter(r => r.id !== receipt.id);
       try { localStorage.setItem(STORAGE_KEY_RECEIPTS, JSON.stringify(filtered)); } catch (e) {}
@@ -1181,6 +1345,9 @@ export default function App() {
       showToast(`Nenhum holerite encontrado no mês de ${mesAno}.`);
       return;
     }
+
+    toDelete.forEach(r => deletedReceiptsRef.current.add(r.id));
+    saveTombstoneSet(STORAGE_KEY_DELETED_RECEIPTS, deletedReceiptsRef.current);
 
     setReceipts(prev => {
       const filtered = prev.filter(r => r.mesAno !== mesAno);
@@ -1213,6 +1380,9 @@ export default function App() {
       showToast(`Nenhum holerite encontrado para o ano ${ano}.`);
       return;
     }
+
+    toDelete.forEach(r => deletedReceiptsRef.current.add(r.id));
+    saveTombstoneSet(STORAGE_KEY_DELETED_RECEIPTS, deletedReceiptsRef.current);
 
     setReceipts(prev => {
       const filtered = prev.filter(
@@ -1271,10 +1441,24 @@ export default function App() {
   const handleDeleteEmployeeWithCascade = async (employee: Employee) => {
     const codigo = String(employee.codigo).trim();
     const cleanCpf = employee.cpf ? employee.cpf.replace(/\D/g, '') : '';
+    const cleanEmail = employee.email ? employee.email.trim().toLowerCase() : '';
+
+    // Registra o código nos tombstones imediatamente para impedir ressurreição por listeners em tempo real
+    deletedEmployeesRef.current.add(codigo);
+    if (employee.id && String(employee.id).trim()) {
+      deletedEmployeesRef.current.add(String(employee.id).trim());
+    }
+    saveTombstoneSet(STORAGE_KEY_DELETED_EMPLOYEES, deletedEmployeesRef.current);
+
+    if (editingEmployee && String(editingEmployee.codigo).trim() === codigo) {
+      setEditingEmployee(null);
+    }
 
     // 1. Encontra e remove holerites vinculados
     const receiptsToDelete = receipts.filter(r => String(r.employeeCodigo).trim() === codigo);
     const recCount = receiptsToDelete.length;
+    receiptsToDelete.forEach(r => deletedReceiptsRef.current.add(r.id));
+    saveTombstoneSet(STORAGE_KEY_DELETED_RECEIPTS, deletedReceiptsRef.current);
 
     setReceipts(prev => {
       const filtered = prev.filter(r => String(r.employeeCodigo).trim() !== codigo);
@@ -1300,6 +1484,8 @@ export default function App() {
       return false;
     });
     const irpfCount = irpfToDelete.length;
+    irpfToDelete.forEach(r => deletedIrpfRef.current.add(r.id));
+    saveTombstoneSet(STORAGE_KEY_DELETED_IRPF, deletedIrpfRef.current);
 
     setIncomeReports(prev => {
       const filtered = prev.filter(r => {
@@ -1322,16 +1508,29 @@ export default function App() {
       deleteIncomeReportsBatchFirestore(irpfToDelete.map(r => r.id)).catch(() => {});
     }
 
-    // 3. Remove conta de usuário vinculado
-    let userToRemoveUid: string | null = null;
+    // 3. Remove todas as contas de usuário vinculadas a este colaborador
+    const matchedUsers = users.filter(
+      u =>
+        u.role === 'COLABORADOR' &&
+        (String(u.employeeCodigo || '').trim() === codigo ||
+          (cleanEmail && u.email && u.email.trim().toLowerCase() === cleanEmail))
+    );
+    deletedUsersRef.current.add(`user-${codigo}`);
+    deletedUsersRef.current.add(`user-colab-${codigo}`);
+    matchedUsers.forEach(u => {
+      if (u.uid) deletedUsersRef.current.add(u.uid);
+    });
+    saveTombstoneSet(STORAGE_KEY_DELETED_USERS, deletedUsersRef.current);
+
     setUsers(prev => {
-      const user = prev.find(
-        u => u.role === 'COLABORADOR' && (u.employeeCodigo === codigo || (employee.email && u.email && u.email.toLowerCase() === employee.email.toLowerCase()))
+      const filtered = prev.filter(
+        u =>
+          !(
+            u.role === 'COLABORADOR' &&
+            (String(u.employeeCodigo || '').trim() === codigo ||
+              (cleanEmail && u.email && u.email.trim().toLowerCase() === cleanEmail))
+          )
       );
-      if (user) {
-        userToRemoveUid = user.uid;
-      }
-      const filtered = prev.filter(u => u.uid !== userToRemoveUid);
       try { localStorage.setItem(STORAGE_KEY_USERS, JSON.stringify(filtered)); } catch (e) {}
       fetch('/api/users', {
         method: 'POST',
@@ -1341,13 +1540,18 @@ export default function App() {
       return filtered;
     });
 
-    if (userToRemoveUid) {
-      deleteUserAccountFirestore(userToRemoveUid).catch(() => {});
-    }
+    deleteUserAccountFirestore(`user-${codigo}`, codigo).catch(() => {});
+    matchedUsers.forEach(u => {
+      if (u.uid) {
+        deleteUserAccountFirestore(u.uid, codigo).catch(() => {});
+      }
+    });
 
-    // 4. Remove o colaborador
+    // 4. Remove o colaborador da lista imediatamente
     setEmployees(prev => {
-      const filtered = prev.filter(e => String(e.codigo).trim() !== codigo);
+      const filtered = prev.filter(
+        e => String(e.codigo).trim() !== codigo && (!employee.id || e.id !== employee.id)
+      );
       try { localStorage.setItem(STORAGE_KEY_EMPLOYEES, JSON.stringify(filtered)); } catch (e) {}
       fetch('/api/employees', {
         method: 'POST',
@@ -1357,7 +1561,7 @@ export default function App() {
       return filtered;
     });
 
-    deleteEmployeeFirestore(codigo).catch(() => {});
+    await deleteEmployeeFirestore(codigo, employee.id);
 
     // 5. Registra log de auditoria
     recordDeleteEmployeeCascadeEvent(currentUser, employee, recCount, irpfCount).catch(() => {});

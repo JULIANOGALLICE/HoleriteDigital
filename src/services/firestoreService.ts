@@ -86,7 +86,12 @@ export function subscribeEmployees(callback: (employees: Employee[]) => void, on
     (snapshot) => {
       const list: Employee[] = [];
       snapshot.forEach(docSnap => {
-        list.push({ id: docSnap.id, ...(docSnap.data() as Employee) });
+        const data = docSnap.data() as Employee;
+        list.push({
+          ...data,
+          id: docSnap.id,
+          codigo: String(data.codigo ?? docSnap.id).trim()
+        });
       });
       callback(list);
     },
@@ -115,9 +120,9 @@ export function cleanUndefined<T>(obj: T): T {
 }
 
 export async function saveEmployeeFirestore(employee: Employee): Promise<void> {
-  const path = `employees/${employee.codigo}`;
+  const cleanCode = String(employee.codigo).trim();
   try {
-    await setDoc(doc(db, 'employees', employee.codigo), cleanUndefined(employee), { merge: true });
+    await setDoc(doc(db, 'employees', cleanCode), cleanUndefined({ ...employee, codigo: cleanCode }), { merge: true });
   } catch (error) {
     console.warn('saveEmployeeFirestore notice:', error);
   }
@@ -131,23 +136,56 @@ export async function saveEmployeesBatchFirestore(employeesList: Employee[]): Pr
     try {
       const batch = writeBatch(db);
       chunk.forEach(emp => {
-        const ref = doc(db, 'employees', emp.codigo);
-        batch.set(ref, cleanUndefined(emp), { merge: true });
+        const cleanCode = String(emp.codigo).trim();
+        const ref = doc(db, 'employees', cleanCode);
+        batch.set(ref, cleanUndefined({ ...emp, codigo: cleanCode }), { merge: true });
       });
       await batch.commit();
     } catch (batchError) {
       console.warn('saveEmployeesBatchFirestore chunk error, fallback to individual sets:', batchError);
       await Promise.allSettled(
-        chunk.map(emp => setDoc(doc(db, 'employees', emp.codigo), cleanUndefined(emp), { merge: true }))
+        chunk.map(emp => {
+          const cleanCode = String(emp.codigo).trim();
+          return setDoc(doc(db, 'employees', cleanCode), cleanUndefined({ ...emp, codigo: cleanCode }), { merge: true });
+        })
       );
     }
   }
 }
 
-export async function deleteEmployeeFirestore(codigo: string): Promise<void> {
-  const path = `employees/${codigo}`;
+export async function deleteEmployeeFirestore(codigo: string, docId?: string): Promise<void> {
+  const cleanCode = String(codigo).trim();
+  const idsToDelete = new Set<string>([cleanCode]);
+  if (docId && String(docId).trim()) {
+    idsToDelete.add(String(docId).trim());
+  }
+
   try {
-    await deleteDoc(doc(db, 'employees', codigo));
+    // Delete known document IDs directly
+    await Promise.allSettled(
+      Array.from(idsToDelete).map(id => deleteDoc(doc(db, 'employees', id)))
+    );
+
+    // Also query by 'codigo' field (both string and number) in case the document ID differs
+    const qStr = query(collection(db, 'employees'), where('codigo', '==', cleanCode));
+    const snapStr = await getDocs(qStr);
+    const extraDeletes: Promise<void>[] = [];
+    snapStr.forEach(d => {
+      extraDeletes.push(deleteDoc(d.ref));
+    });
+
+    const numCode = Number(cleanCode);
+    if (!Number.isNaN(numCode)) {
+      const qNum = query(collection(db, 'employees'), where('codigo', '==', numCode));
+      const snapNum = await getDocs(qNum);
+      snapNum.forEach(d => {
+        extraDeletes.push(deleteDoc(d.ref));
+      });
+    }
+
+    if (extraDeletes.length > 0) {
+      await Promise.allSettled(extraDeletes);
+    }
   } catch (error) {
     console.warn('deleteEmployeeFirestore notice:', error);
   }
@@ -378,7 +416,11 @@ export function subscribeUsers(callback: (users: UserAccount[]) => void) {
     (snap) => {
       const users: UserAccount[] = [];
       snap.forEach((docItem) => {
-        users.push(docItem.data() as UserAccount);
+        const data = docItem.data() as UserAccount;
+        users.push({
+          ...data,
+          uid: data.uid || docItem.id
+        });
       });
       callback(users);
     },
@@ -433,9 +475,30 @@ export async function saveUsersBatchFirestore(usersList: UserAccount[]): Promise
   } catch (e) {}
 }
 
-export async function deleteUserAccountFirestore(uid: string): Promise<void> {
+export async function deleteUserAccountFirestore(uid: string, employeeCodigo?: string): Promise<void> {
+  const idsToDelete = new Set<string>();
+  if (uid && String(uid).trim()) idsToDelete.add(String(uid).trim());
+  if (employeeCodigo && String(employeeCodigo).trim()) {
+    const cleanCode = String(employeeCodigo).trim();
+    idsToDelete.add(`user-${cleanCode}`);
+    idsToDelete.add(`user-colab-${cleanCode}`);
+  }
   try {
-    await deleteDoc(doc(db, 'users', uid));
+    await Promise.allSettled(
+      Array.from(idsToDelete).map(id => deleteDoc(doc(db, 'users', id)))
+    );
+    if (employeeCodigo && String(employeeCodigo).trim()) {
+      const cleanCode = String(employeeCodigo).trim();
+      const q = query(collection(db, 'users'), where('employeeCodigo', '==', cleanCode));
+      const snap = await getDocs(q);
+      const extra: Promise<void>[] = [];
+      snap.forEach(d => {
+        if ((d.data() as UserAccount).role !== 'GESTOR') {
+          extra.push(deleteDoc(d.ref));
+        }
+      });
+      if (extra.length > 0) await Promise.allSettled(extra);
+    }
   } catch (error) {
     console.warn('deleteUserAccountFirestore notice:', error);
   }
