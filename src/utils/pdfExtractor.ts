@@ -1,6 +1,7 @@
 /**
- * Extrai texto completo de arquivos PDF preservando as linhas visuais
- * e delimitando páginas.
+ * Extrai texto completo de arquivos PDF preservando as linhas visuais,
+ * filtrando a caixa vertical de assinatura à direita e demarcando as colunas
+ * de Vencimentos ([V]) e Descontos ([D]) por coordenada X.
  */
 export async function extractPdfText(
   file: File,
@@ -8,7 +9,6 @@ export async function extractPdfText(
 ): Promise<{ text: string; pagesCount: number }> {
   onProgress?.('Carregando arquivo PDF...');
 
-  // 1. Converter File em Base64 para envio à rota /api/extract-pdf-text
   const base64 = await fileToBase64(file);
 
   try {
@@ -35,7 +35,6 @@ export async function extractPdfText(
     console.warn('Falha na chamada /api/extract-pdf-text, tentando extração local no navegador:', err);
   }
 
-  // 2. Fallback: Leitura direta no navegador via pdfjs-dist
   onProgress?.('Extraindo texto diretamente no navegador...');
   return await extractPdfTextInBrowser(file, onProgress);
 }
@@ -52,6 +51,31 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
+export function formatVisualLineWithColumns(lineItems: { str: string; x: number; y: number }[]): string {
+  // Filtra textos verticais da margem direita de assinatura (x >= 515)
+  const filtered = lineItems.filter(it => it.x < 515);
+  if (filtered.length === 0) return '';
+
+  filtered.sort((a, b) => a.x - b.x);
+  const textLine = filtered.map(i => i.str.trim()).join(' ');
+
+  // Se a linha parece ser um item de rubrica (começa com código numérico em x < 35 e termina com valor monetário em x >= 355)
+  const first = filtered[0];
+  const last = filtered[filtered.length - 1];
+  if (
+    filtered.length >= 3 &&
+    first.x < 35 &&
+    /^\d{1,5}$/.test(first.str.trim()) &&
+    last.x >= 355 &&
+    /^\d[\d\.]*,\d{2}$/.test(last.str.trim())
+  ) {
+    const colTag = last.x >= 438 ? '[D]' : '[V]';
+    return `${textLine} ${colTag}`;
+  }
+
+  return textLine;
+}
+
 async function extractPdfTextInBrowser(
   file: File,
   onProgress?: (status: string) => void
@@ -59,7 +83,6 @@ async function extractPdfTextInBrowser(
   const arrayBuffer = await file.arrayBuffer();
   const pdfjsLib = await import('pdfjs-dist');
 
-  // Configura worker
   if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
     pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version || '4.10.38'}/pdf.worker.min.mjs`;
   }
@@ -78,7 +101,6 @@ async function extractPdfTextInBrowser(
     const page = await pdf.getPage(pageNum);
     const content = await page.getTextContent();
 
-    // Coleta todos os itens de texto com coordenadas
     const items: { str: string; x: number; y: number }[] = [];
     for (const item of content.items as any[]) {
       if (!item.str || !item.str.trim()) continue;
@@ -89,10 +111,8 @@ async function extractPdfTextInBrowser(
       });
     }
 
-    // Ordena decrescente em Y (do topo para a base da página)
     items.sort((a, b) => b.y - a.y);
 
-    // Agrupa itens na mesma linha visual com tolerância de 3.5 pontos
     const lines: string[] = [];
     let currentLineItems: { str: string; x: number; y: number }[] = [];
     let currentLineY: number | null = null;
@@ -102,15 +122,15 @@ async function extractPdfTextInBrowser(
         currentLineItems.push(it);
         if (currentLineY === null) currentLineY = it.y;
       } else {
-        currentLineItems.sort((a, b) => a.x - b.x);
-        lines.push(currentLineItems.map(i => i.str).join(' '));
+        const formatted = formatVisualLineWithColumns(currentLineItems);
+        if (formatted) lines.push(formatted);
         currentLineItems = [it];
         currentLineY = it.y;
       }
     }
     if (currentLineItems.length > 0) {
-      currentLineItems.sort((a, b) => a.x - b.x);
-      lines.push(currentLineItems.map(i => i.str).join(' '));
+      const formatted = formatVisualLineWithColumns(currentLineItems);
+      if (formatted) lines.push(formatted);
     }
 
     pageTexts.push(`=== PAGE ${pageNum} ===\n` + lines.join('\n'));

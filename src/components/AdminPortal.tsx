@@ -37,7 +37,10 @@ import {
   Trash2,
   Calendar,
   FileSpreadsheet,
-  History
+  History,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -100,6 +103,17 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   const [selectedDepartment, setSelectedDepartment] = useState('TODOS');
   const [selectedMonth, setSelectedMonth] = useState('Setembro de 2026');
   const [signatureFilter, setSignatureFilter] = useState<'ALL' | 'PENDING' | 'SIGNED'>('ALL');
+  const [sortBy, setSortBy] = useState<'CODIGO' | 'NOME'>('CODIGO');
+  const [sortDirection, setSortDirection] = useState<'ASC' | 'DESC'>('ASC');
+
+  const handleToggleSort = (field: 'CODIGO' | 'NOME') => {
+    if (sortBy === field) {
+      setSortDirection(prev => (prev === 'ASC' ? 'DESC' : 'ASC'));
+    } else {
+      setSortBy(field);
+      setSortDirection('ASC');
+    }
+  };
 
   // Deletion and Blocking States
   const [receiptToDelete, setReceiptToDelete] = useState<{ receipt: PayReceipt; employee?: Employee } | null>(null);
@@ -120,24 +134,42 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   const signedPercent = monthReceipts.length > 0 ? Math.round((signedCount / monthReceipts.length) * 100) : 0;
   const pendingMedicalCount = medicalCertificates.filter(c => c.status === 'PENDENTE').length;
 
-  // Filtered employees
-  const filteredEmployees = employees.filter(emp => {
-    const matchesSearch =
-      emp.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      emp.codigo.includes(searchTerm) ||
-      (emp.cpf && emp.cpf.includes(searchTerm)) ||
-      emp.cargo.toLowerCase().includes(searchTerm.toLowerCase());
+  // Filtered and sorted employees
+  const filteredEmployees = useMemo(() => {
+    const filtered = employees.filter(emp => {
+      const matchesSearch =
+        emp.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        emp.codigo.includes(searchTerm) ||
+        (emp.cpf && emp.cpf.includes(searchTerm)) ||
+        emp.cargo.toLowerCase().includes(searchTerm.toLowerCase());
 
-    const matchesDept = selectedDepartment === 'TODOS' || emp.departamento === selectedDepartment;
+      const matchesDept = selectedDepartment === 'TODOS' || emp.departamento === selectedDepartment;
 
-    const receipt = receipts.find(r => r.employeeCodigo === emp.codigo && r.mesAno === selectedMonth);
-    const matchesSignature =
-      signatureFilter === 'ALL' ||
-      (signatureFilter === 'PENDING' && receipt && receipt.statusAssinatura !== 'ASSINADO') ||
-      (signatureFilter === 'SIGNED' && receipt && receipt.statusAssinatura === 'ASSINADO');
+      const receipt = receipts.find(r => r.employeeCodigo === emp.codigo && r.mesAno === selectedMonth);
+      const matchesSignature =
+        signatureFilter === 'ALL' ||
+        (signatureFilter === 'PENDING' && receipt && receipt.statusAssinatura !== 'ASSINADO') ||
+        (signatureFilter === 'SIGNED' && receipt && receipt.statusAssinatura === 'ASSINADO');
 
-    return matchesSearch && matchesDept && matchesSignature;
-  });
+      return matchesSearch && matchesDept && matchesSignature;
+    });
+
+    return [...filtered].sort((a, b) => {
+      let comparison = 0;
+      if (sortBy === 'CODIGO') {
+        const numA = parseInt(String(a.codigo).replace(/\D/g, ''), 10);
+        const numB = parseInt(String(b.codigo).replace(/\D/g, ''), 10);
+        if (!isNaN(numA) && !isNaN(numB) && numA !== numB) {
+          comparison = numA - numB;
+        } else {
+          comparison = String(a.codigo).localeCompare(String(b.codigo), 'pt-BR', { numeric: true });
+        }
+      } else {
+        comparison = (a.nome || '').localeCompare(b.nome || '', 'pt-BR', { sensitivity: 'base' });
+      }
+      return sortDirection === 'ASC' ? comparison : -comparison;
+    });
+  }, [employees, receipts, searchTerm, selectedDepartment, selectedMonth, signatureFilter, sortBy, sortDirection]);
 
   const departments = Array.from(new Set(employees.map(e => e.departamento || 'CARTÓRIO GERAL')));
 
@@ -587,6 +619,44 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               </button>
             </div>
 
+            {/* Sort Switcher (Código vs Colaborador) */}
+            <div className="inline-flex items-center rounded-xl border border-slate-300 bg-white p-0.5 shadow-xs">
+              <span className="px-2 text-[11px] font-medium text-slate-500 flex items-center gap-1">
+                <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                Ordenar:
+              </span>
+              <button
+                type="button"
+                onClick={() => handleToggleSort('CODIGO')}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-lg flex items-center gap-1 transition-all cursor-pointer ${
+                  sortBy === 'CODIGO'
+                    ? 'bg-blue-600 text-white font-bold shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                }`}
+                title="Ordenar por Código do colaborador (clique para alternar crescente/decrescente)"
+              >
+                <span>Código</span>
+                {sortBy === 'CODIGO' && (
+                  sortDirection === 'ASC' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleToggleSort('NOME')}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-lg flex items-center gap-1 transition-all cursor-pointer ${
+                  sortBy === 'NOME'
+                    ? 'bg-blue-600 text-white font-bold shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                }`}
+                title="Ordenar alfabeticamente por Nome do colaborador (clique para alternar A-Z / Z-A)"
+              >
+                <span>Colaborador</span>
+                {sortBy === 'NOME' && (
+                  sortDirection === 'ASC' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
+                )}
+              </button>
+            </div>
+
             {/* Department Filter */}
             <div className="flex items-center gap-1.5">
               <Filter className="w-3.5 h-3.5 text-slate-500" />
@@ -805,8 +875,42 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-100/80 text-slate-700 font-semibold border-b border-slate-200 uppercase tracking-wider text-[10px]">
               <tr>
-                <th className="py-3 px-4">Cód</th>
-                <th className="py-3 px-4">Colaborador / Cargo</th>
+                <th
+                  onClick={() => handleToggleSort('CODIGO')}
+                  className="py-3 px-4 cursor-pointer select-none hover:bg-slate-200/70 transition-colors group"
+                  title="Clique para ordenar pelo Código"
+                >
+                  <div className="inline-flex items-center gap-1">
+                    <span className={sortBy === 'CODIGO' ? 'text-blue-700 font-bold' : ''}>Cód</span>
+                    {sortBy === 'CODIGO' ? (
+                      sortDirection === 'ASC' ? (
+                        <ArrowUp className="w-3.5 h-3.5 text-blue-600" />
+                      ) : (
+                        <ArrowDown className="w-3.5 h-3.5 text-blue-600" />
+                      )
+                    ) : (
+                      <ArrowUpDown className="w-3 h-3 text-slate-400 group-hover:text-slate-600" />
+                    )}
+                  </div>
+                </th>
+                <th
+                  onClick={() => handleToggleSort('NOME')}
+                  className="py-3 px-4 cursor-pointer select-none hover:bg-slate-200/70 transition-colors group"
+                  title="Clique para ordenar pelo nome do Colaborador"
+                >
+                  <div className="inline-flex items-center gap-1">
+                    <span className={sortBy === 'NOME' ? 'text-blue-700 font-bold' : ''}>Colaborador / Cargo</span>
+                    {sortBy === 'NOME' ? (
+                      sortDirection === 'ASC' ? (
+                        <ArrowUp className="w-3.5 h-3.5 text-blue-600" />
+                      ) : (
+                        <ArrowDown className="w-3.5 h-3.5 text-blue-600" />
+                      )
+                    ) : (
+                      <ArrowUpDown className="w-3 h-3 text-slate-400 group-hover:text-slate-600" />
+                    )}
+                  </div>
+                </th>
                 <th className="py-3 px-4">Departamento</th>
                 <th className="py-3 px-4">Admissão</th>
                 <th className="py-3 px-4">Telefone / Familiares</th>

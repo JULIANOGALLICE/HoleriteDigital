@@ -102,12 +102,34 @@ function saveTombstoneSet(key: string, set: Set<string>) {
   } catch (e) {}
 }
 
+function isReceiptMathematicallyValid(r: PayReceipt): boolean {
+  if (!r || !Array.isArray(r.itens) || r.itens.length === 0) return false;
+  if (!r.salarioBase || r.salarioBase < 500) return false;
+  // Rejeita rubricas inválidas criadas por erro antigo (onde descrição era o próprio nome do colaborador)
+  if (r.itens.some(it => it.codigo === '1' && !it.descricao.toUpperCase().includes('HORAS') && !it.descricao.toUpperCase().includes('SAL'))) {
+    return false;
+  }
+  const sumV = +r.itens.reduce((a, i) => a + (Number(i.vencimento) || 0), 0).toFixed(2);
+  const sumD = +r.itens.reduce((a, i) => a + (Number(i.desconto) || 0), 0).toFixed(2);
+  const totV = Number(r.totalVencimentos) || 0;
+  const totD = Number(r.totalDescontos) || 0;
+  const liq = Number(r.valorLiquido) || 0;
+  return (
+    totV > 0 &&
+    Math.abs(sumV - totV) <= 0.05 &&
+    Math.abs(sumD - totD) <= 0.05 &&
+    Math.abs((totV - totD) - liq) <= 0.05
+  );
+}
+
 export default function App() {
   // Tombstone registries to prevent deleted records from being resurrected by snapshots or caches
   const deletedEmployeesRef = useRef<Set<string>>(loadTombstoneSet(STORAGE_KEY_DELETED_EMPLOYEES, ['80']));
   const deletedReceiptsRef = useRef<Set<string>>(loadTombstoneSet(STORAGE_KEY_DELETED_RECEIPTS));
   const deletedUsersRef = useRef<Set<string>>(loadTombstoneSet(STORAGE_KEY_DELETED_USERS, ['user-80', 'user-colab-80']));
   const deletedIrpfRef = useRef<Set<string>>(loadTombstoneSet(STORAGE_KEY_DELETED_IRPF));
+  const verifiedEmployeesMapRef = useRef<Map<string, Employee>>(new Map(INITIAL_EMPLOYEES.map(e => [String(e.codigo).trim(), e])));
+  const verifiedReceiptsMapRef = useRef<Map<string, PayReceipt>>(new Map(INITIAL_RECEIPTS.map(r => [r.id, r])));
 
   // Current user account session: Starts as null so the initial screen shows the Login Screen
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(null);
@@ -297,12 +319,40 @@ export default function App() {
       .then(res => res.json())
       .then(data => {
         if (data?.success && Array.isArray(data.employees) && data.employees.length > 0) {
-          setEmployees(() => {
+          data.employees.forEach((e: Employee) => {
+            const code = String(e.codigo).trim();
+            if (!deletedEmployeesRef.current.has(code) && e.salarioBase >= 500) {
+              verifiedEmployeesMapRef.current.set(code, { ...e, codigo: code });
+            }
+          });
+          setEmployees(prev => {
             const map = new Map<string, Employee>();
+            prev.forEach(e => {
+              const code = String(e.codigo).trim();
+              if (!deletedEmployeesRef.current.has(code)) {
+                map.set(code, e);
+              }
+            });
             data.employees.forEach((e: Employee) => {
               const code = String(e.codigo).trim();
               if (!deletedEmployeesRef.current.has(code)) {
-                map.set(code, { ...e, codigo: code });
+                const existing = map.get(code);
+                const mergedEmp = existing
+                  ? {
+                      ...existing,
+                      ...e,
+                      codigo: code,
+                      salarioBase: e.salarioBase >= 500 ? e.salarioBase : existing.salarioBase,
+                      cpf: existing.cpf || e.cpf || '',
+                      email: existing.email || e.email || '',
+                      telefone: existing.telefone || e.telefone || '',
+                      bloqueado: existing.bloqueado ?? e.bloqueado
+                    }
+                  : { ...e, codigo: code };
+                map.set(code, mergedEmp);
+                if (!existing || existing.salarioBase < 500 || existing.salarioBase !== mergedEmp.salarioBase) {
+                  saveEmployeeFirestore(mergedEmp).catch(() => {});
+                }
               }
             });
             const list = Array.from(map.values());
@@ -317,12 +367,37 @@ export default function App() {
       .then(res => res.json())
       .then(data => {
         if (data?.success && Array.isArray(data.receipts)) {
-          setReceipts(() => {
+          data.receipts.forEach((r: PayReceipt) => {
+            const empCode = String(r.employeeCodigo).trim();
+            if (!deletedReceiptsRef.current.has(r.id) && !deletedEmployeesRef.current.has(empCode) && isReceiptMathematicallyValid(r)) {
+              verifiedReceiptsMapRef.current.set(r.id, r);
+            }
+          });
+          setReceipts(prev => {
             const map = new Map<string, PayReceipt>();
+            prev.forEach(r => {
+              const empCode = String(r.employeeCodigo).trim();
+              if (!deletedReceiptsRef.current.has(r.id) && !deletedEmployeesRef.current.has(empCode) && isReceiptMathematicallyValid(r)) {
+                map.set(r.id, r);
+              }
+            });
             data.receipts.forEach((r: PayReceipt) => {
               const empCode = String(r.employeeCodigo).trim();
               if (!deletedReceiptsRef.current.has(r.id) && !deletedEmployeesRef.current.has(empCode)) {
-                map.set(r.id, r);
+                const existing = prev.find(p => p.id === r.id);
+                const cleanRec: PayReceipt = {
+                  ...r,
+                  statusAssinatura: existing?.statusAssinatura || r.statusAssinatura || 'PENDENTE',
+                  dataAssinatura: existing?.dataAssinatura || r.dataAssinatura,
+                  ipAssinatura: existing?.ipAssinatura || r.ipAssinatura,
+                  codigoAssinatura: existing?.codigoAssinatura || r.codigoAssinatura,
+                  metodoAssinatura: existing?.metodoAssinatura || r.metodoAssinatura,
+                  historicoEnvios: existing?.historicoEnvios?.length ? existing.historicoEnvios : (r.historicoEnvios || [])
+                };
+                map.set(r.id, cleanRec);
+                if (!existing || !isReceiptMathematicallyValid(existing)) {
+                  saveReceiptFirestore(cleanRec).catch(() => {});
+                }
               }
             });
             const list = Array.from(map.values());
@@ -374,7 +449,23 @@ export default function App() {
           const map = new Map<string, Employee>();
           validRemote.forEach(e => {
             const code = String(e.codigo).trim();
-            map.set(code, { ...e, codigo: code });
+            const verified = verifiedEmployeesMapRef.current.get(code);
+            // Se o registro remoto tinha salário corrompido (< 500, ex: 177), restaura o salário e dados oficiais verificados
+            if (verified && (!e.salarioBase || e.salarioBase < 500)) {
+              const healed: Employee = {
+                ...e,
+                codigo: code,
+                nome: verified.nome || e.nome,
+                cargo: verified.cargo || e.cargo,
+                cbo: verified.cbo || e.cbo,
+                salarioBase: verified.salarioBase,
+                dataAdmissao: verified.dataAdmissao || e.dataAdmissao
+              };
+              map.set(code, healed);
+              saveEmployeeFirestore(healed).catch(() => {});
+            } else {
+              map.set(code, { ...e, codigo: code });
+            }
           });
           const merged = Array.from(map.values());
           try {
@@ -401,7 +492,27 @@ export default function App() {
         if (validRemote.length > 0 || remoteReceipts.length === 0) {
           setReceipts(() => {
             const map = new Map<string, PayReceipt>();
-            validRemote.forEach(r => map.set(r.id, r));
+            validRemote.forEach(r => {
+              // Se o holerite no Firestore estava corrompido pela importação anterior (ex: Elaine com salarioBase 177 ou soma de rubricas != total), substitui pelo holerite íntegro
+              if (!isReceiptMathematicallyValid(r)) {
+                const verified = verifiedReceiptsMapRef.current.get(r.id);
+                if (verified) {
+                  const healed: PayReceipt = {
+                    ...verified,
+                    statusAssinatura: r.statusAssinatura || verified.statusAssinatura || 'PENDENTE',
+                    dataAssinatura: r.dataAssinatura || verified.dataAssinatura,
+                    ipAssinatura: r.ipAssinatura || verified.ipAssinatura,
+                    codigoAssinatura: r.codigoAssinatura || verified.codigoAssinatura,
+                    metodoAssinatura: r.metodoAssinatura || verified.metodoAssinatura,
+                    historicoEnvios: r.historicoEnvios?.length ? r.historicoEnvios : (verified.historicoEnvios || [])
+                  };
+                  map.set(r.id, healed);
+                  saveReceiptFirestore(healed).catch(() => {});
+                  return;
+                }
+              }
+              map.set(r.id, r);
+            });
             const merged = Array.from(map.values());
             try {
               localStorage.setItem(STORAGE_KEY_RECEIPTS, JSON.stringify(merged));
@@ -788,15 +899,17 @@ export default function App() {
     let finalEmployees: Employee[] = [];
     let finalReceipts: PayReceipt[] = [];
 
-    // Un-tombstone any re-imported employees or receipts
+    // Un-tombstone any re-imported employees or receipts and register in verified refs
     newOrUpdatedEmployees.forEach(emp => {
       const code = String(emp.codigo).trim();
       deletedEmployeesRef.current.delete(code);
       deletedUsersRef.current.delete(`user-${code}`);
       deletedUsersRef.current.delete(`user-colab-${code}`);
+      verifiedEmployeesMapRef.current.set(code, { ...emp, codigo: code });
     });
     newReceipts.forEach(rec => {
       deletedReceiptsRef.current.delete(rec.id);
+      verifiedReceiptsMapRef.current.set(rec.id, rec);
     });
     saveTombstoneSet(STORAGE_KEY_DELETED_EMPLOYEES, deletedEmployeesRef.current);
     saveTombstoneSet(STORAGE_KEY_DELETED_USERS, deletedUsersRef.current);

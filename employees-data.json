@@ -1,0 +1,894 @@
+[
+  {
+    "codigo": "6",
+    "nome": "JULIANO CESAR GALLICE",
+    "cbo": "351405",
+    "cargo": "ESCREVENTE II",
+    "departamento": "CARTÓRIO GERAL",
+    "filial": "1",
+    "dataAdmissao": "02/03/2023",
+    "salarioBase": 8030.05,
+    "cpf": "284.912.758-44",
+    "rg": "34.812.905-1 SSP/SP",
+    "pisPasep": "170.82914.55-9",
+    "ctps": "048291/0023-SP",
+    "email": "JulianoGallice@gmail.com",
+    "telefone": "(11) 98124-7763",
+    "status": "ATIVO",
+    "endereco": {
+      "logradouro": "Avenida Paulista",
+      "numero": "1842",
+      "complemento": "Apto 102",
+      "bairro": "Bela Vista",
+      "cidade": "São Paulo",
+      "uf": "SP",
+      "cep": "01310-200"
+    },
+    "contatosFamiliares": [
+      {
+        "id": "cf-1",
+        "nome": "Mariana Silva Gallice",
+        "parentesco": "Esposa",
+        "telefone": "(11) 99341-8822",
+        "observacao": "Contato principal em caso de emergência médica"
+      },
+      {
+        "id": "cf-2",
+        "nome": "Roberto Gallice",
+        "parentesco": "Pai",
+        "telefone": "(11) 97112-4409",
+        "observacao": "Avisar caso não consiga contato com esposa"
+      }
+    ],
+    "dadosBancarios": {
+      "banco": "ITAÚ UNIBANCO S.A. (341)",
+      "agencia": "0451",
+      "conta": "38194-2",
+      "tipoConta": "CORRENTE",
+      "chavePix": "JulianoGallice@gmail.com"
+    },
+    "dataNascimento": "1988-06-19",
+    "observacoes": "Responsável pelo setor de escrituras e certidões."
+  },
+  {
+    "codigo": "1",
+    "nome": "ELAINE BLANSKY",
+    "cbo": "351405",
+    "cargo": "ESCREVENTE SUBSTITUTA LEGAL",
+    "departamento": "TABELIONATO DE NOTAS",
+    "filial": "1",
+    "dataAdmissao": "13/05/2010",
+    "salarioBase": 8787.49,
+    "cpf": "192.834.712-09",
+    "rg": "28.194.512-8 SSP/SP",
+    "pisPasep": "128.49120.34-1",
+    "ctps": "019284/0012-SP",
+    "email": "elaine.blansky@cartorio.not.br",
+    "telefone": "(11) 98711-2345",
+    "status": "ATIVO",
+    "endereco": {
+      "logradouro": "Rua Bela Cintra",
+      "numero": "950",
+      "complemento": "Conjunto 42",
+      "bairro": "Consolação",
+      "cidade": "São Paulo",
+      "uf": "SP",
+      "cep": "01415-000"
+    },
+    "contatosFamiliares": [
+      {
+        "id": "cf-3",
+        "nome": "Carlos Eduardo Blansky",
+        "parentesco": "Irmão",
+        "telefone": "(11) 98822-1144",
+        "observacao": "Emergência"
+      }
+    ],
+    "dadosBancarios": {
+      "banco": "CAIXA ECONOMICA FEDERAL 104",
+      "agencia": "3915 - 2",
+      "conta": "00008710-0",
+      "tipoConta": "POUPANCA",
+      "chavePix": "elaine.blansky@cartorio.not.br"
+    },
+    "dataNascimento": "1982-04-12"
+  },
+  {
+    "codigo": "8",
+    "nome": "ADRIANA DE FATIMA DA SILVA",
+    "cbo": "351405",
+    "cargo": "ESCREVENTE I",
+    "departamento": "REGISTRO CIVIL",
+    "filial": "1",
+    "dataAdmissao": "02/03/2023",
+    "salarioBase": 4110.54,
+    "cpf": "334.871.294-81",
+    "email": "adriana.silva@cartorio.not.br",
+    "telefone": "(11) 97412-8991",
+    "status": "ATIVO",
+    "endereco": {
+      "logradouro": "Rua Vergueiro",
+      "numero": "2040",
+      "bairro": "Vila Mariana",
+      "cidade": "São Paulo",
+      "uf": "SP",
+      "cep": "04102-000"
+    },
+    "contatosFamiliares": [
+      {
+        "id": "cf-4",
+        "nome": "Marcos Antonio da Silva",
+        "parentesco": "Cônjuge",
+        "telefone": "(11) 99118-2390",
+        "observacao": "Contato familiar"
+      }
+    ],
+    "dadosBancarios": {
+      "banco": "BANCO DO BRASIL S.A. (001)",
+      "agencia": "1822-8",
+      "conta": "49120-1",
+      "tipoConta": "CORRENTE",
+      "chavePix": "33487129481"
+    },
+    "dataNascimento": "1990-09-14"
+  },
+  {
+    "codigo": "2",
+    "nome": "LEONARDO SOUZA DE OLIVEIRA",
+    "cbo": "351405",
+    "cargo": "ESCREVENTE",
+    "departamento": "PROTESTO DE TÍTULOS",
+    "filial": "1",
+    "dataAdmissao": "07/01/2019",
+    "salarioBase": 3518.38,
+    "cpf": "409.112.873-19",
+    "email": "leonardo.oliveira@cartorio.not.br",
+    "telefone": "(11) 96521-9988",
+    "status": "ATIVO",
+    "endereco": {
+      "logradouro": "Rua Domingos de Morais",
+      "numero": "1200",
+      "bairro": "Vila Mariana",
+      "cidade": "São Paulo",
+      "uf": "SP",
+      "cep": "04010-100"
+    },
+    "contatosFamiliares": [
+      {
+        "id": "cf-5",
+        "nome": "Patricia Mendes de Oliveira",
+        "parentesco": "Esposa",
+        "telefone": "(11) 97723-4411",
+        "observacao": "Recente paternidade"
+      }
+    ],
+    "dadosBancarios": {
+      "banco": "BRADESCO S/A 237",
+      "agencia": "1369 - 2",
+      "conta": "7371-7",
+      "tipoConta": "CORRENTE"
+    }
+  },
+  {
+    "codigo": "20",
+    "nome": "ANDREA LUMARA CARMO MOTA",
+    "cbo": "351405",
+    "cargo": "ESCREVENTE II",
+    "departamento": "CARTÓRIO GERAL",
+    "filial": "1",
+    "dataAdmissao": "03/03/2023",
+    "salarioBase": 5094.21,
+    "cpf": "298.441.902-33",
+    "email": "andrea.mota@cartorio.not.br",
+    "telefone": "(11) 99823-1100",
+    "status": "ATIVO",
+    "endereco": {
+      "logradouro": "Rua Haddock Lobo",
+      "numero": "710",
+      "bairro": "Cerqueira César",
+      "cidade": "São Paulo",
+      "uf": "SP",
+      "cep": "01414-001"
+    },
+    "contatosFamiliares": [
+      {
+        "id": "cf-6",
+        "nome": "Lucia Carmo Mota",
+        "parentesco": "Mãe",
+        "telefone": "(11) 98112-3344",
+        "observacao": "Familiar próximo"
+      }
+    ],
+    "dadosBancarios": {
+      "banco": "SANTANDER BRASIL (033)",
+      "agencia": "2109",
+      "conta": "13009841-2",
+      "tipoConta": "CORRENTE"
+    }
+  },
+  {
+    "codigo": "3",
+    "nome": "MONA PAULA DA VEIGA MULLER",
+    "cbo": "351405",
+    "cargo": "ESCREVENTE",
+    "departamento": "AUTENTICAÇÕES E RECONHECIMENTO",
+    "filial": "1",
+    "dataAdmissao": "02/03/2023",
+    "salarioBase": 3319.23,
+    "cpf": "381.992.104-55",
+    "email": "mona.muller@cartorio.not.br",
+    "telefone": "(11) 98451-2299",
+    "status": "ATIVO",
+    "endereco": {
+      "logradouro": "Alameda Santos",
+      "numero": "1432",
+      "bairro": "Jardim Paulista",
+      "cidade": "São Paulo",
+      "uf": "SP",
+      "cep": "01418-100"
+    },
+    "contatosFamiliares": [],
+    "dadosBancarios": {
+      "banco": "ITAÚ UNIBANCO S.A. (341)",
+      "agencia": "0190",
+      "conta": "29104-5",
+      "tipoConta": "CORRENTE"
+    }
+  },
+  {
+    "codigo": "22",
+    "nome": "ADRIANA PEREIRA DE SOUZA BRISOTI",
+    "cbo": "411025",
+    "cargo": "AUXILIAR DE CARTORIO",
+    "departamento": "ATENDIMENTO AO PÚBLICO",
+    "filial": "1",
+    "dataAdmissao": "03/03/2023",
+    "salarioBase": 3518.38,
+    "cpf": "210.998.412-76",
+    "email": "adriana.brisoti@cartorio.not.br",
+    "telefone": "(11) 97200-4411",
+    "status": "ATIVO",
+    "endereco": {
+      "logradouro": "Rua Pamplona",
+      "numero": "512",
+      "bairro": "Jardim Paulista",
+      "cidade": "São Paulo",
+      "uf": "SP",
+      "cep": "01405-000"
+    },
+    "contatosFamiliares": [],
+    "dadosBancarios": {
+      "banco": "BRADESCO S/A (237)",
+      "agencia": "0420",
+      "conta": "88210-9",
+      "tipoConta": "CORRENTE"
+    }
+  },
+  {
+    "codigo": "37",
+    "nome": "AMANDA DE PAULA ANDOLFATO JAQUETTI",
+    "cbo": "411025",
+    "cargo": "AUXILIAR DE CARTORIO",
+    "departamento": "ATENDIMENTO AO PÚBLICO",
+    "filial": "1",
+    "dataAdmissao": "31/05/2024",
+    "salarioBase": 2759.17,
+    "cpf": "450.192.834-01",
+    "email": "amanda.jaquetti@cartorio.not.br",
+    "telefone": "(11) 98334-1122",
+    "status": "ATIVO",
+    "endereco": {
+      "logradouro": "Rua Oscar Freire",
+      "numero": "220",
+      "bairro": "Cerqueira César",
+      "cidade": "São Paulo",
+      "uf": "SP",
+      "cep": "01426-000"
+    },
+    "contatosFamiliares": [],
+    "dadosBancarios": {
+      "banco": "NUBANK (260)",
+      "agencia": "0001",
+      "conta": "9841290-3",
+      "tipoConta": "CORRENTE"
+    }
+  },
+  {
+    "codigo": "31",
+    "nome": "ANA CAROLINA DE ANDRADE BORGES",
+    "cbo": "351405",
+    "cargo": "ESCREVENTE",
+    "departamento": "ESCRITURAS",
+    "filial": "1",
+    "dataAdmissao": "08/08/2023",
+    "salarioBase": 3151.65,
+    "cpf": "377.109.845-21",
+    "email": "ana.andrade@cartorio.not.br",
+    "telefone": "(11) 96192-3344",
+    "status": "ATIVO",
+    "endereco": {
+      "logradouro": "Rua Augusta",
+      "numero": "2100",
+      "bairro": "Consolação",
+      "cidade": "São Paulo",
+      "uf": "SP",
+      "cep": "01412-000"
+    },
+    "contatosFamiliares": [],
+    "dadosBancarios": {
+      "banco": "BANCO INTER (077)",
+      "agencia": "0001",
+      "conta": "551920-1",
+      "tipoConta": "CORRENTE"
+    }
+  },
+  {
+    "codigo": "78",
+    "nome": "JULIANA FERREIRA SOARES",
+    "cbo": "514120",
+    "cargo": "AUX. SERVIÇOS GERAIS",
+    "departamento": "SUPORTE OPERACIONAL",
+    "filial": "1",
+    "dataAdmissao": "21/07/2026",
+    "salarioBase": 1880.48,
+    "cpf": "419.002.812-70",
+    "email": "juliana.soares@cartorio.not.br",
+    "telefone": "(11) 97009-8811",
+    "status": "ATIVO",
+    "endereco": {
+      "logradouro": "Rua da Mooca",
+      "numero": "1540",
+      "bairro": "Mooca",
+      "cidade": "São Paulo",
+      "uf": "SP",
+      "cep": "03104-001"
+    },
+    "contatosFamiliares": [],
+    "dadosBancarios": {
+      "banco": "CAIXA ECONOMICA FEDERAL (104)",
+      "agencia": "0281",
+      "conta": "19041-0",
+      "tipoConta": "POUPANCA"
+    }
+  },
+  {
+    "codigo": "16",
+    "nome": "ANDREIA PEREIRA ROSA",
+    "cbo": "411025",
+    "cargo": "AUXILIAR DE CARTORIO",
+    "departamento": "1",
+    "filial": "1",
+    "dataAdmissao": "02/03/2023",
+    "salarioBase": 2636.26,
+    "cpf": "",
+    "email": "",
+    "telefone": "",
+    "status": "ATIVO",
+    "endereco": {
+      "logradouro": "",
+      "numero": "",
+      "bairro": "",
+      "cidade": "",
+      "uf": "",
+      "cep": ""
+    },
+    "contatosFamiliares": [],
+    "dadosBancarios": {
+      "banco": "",
+      "agencia": "",
+      "conta": "",
+      "tipoConta": "CORRENTE"
+    },
+    "cadastroCompleto": false
+  },
+  {
+    "codigo": "25",
+    "nome": "CAROLINE MAINARDES ALVES DOS SANTOS CERBELO",
+    "cbo": "351405",
+    "cargo": "ESCREVENTE",
+    "departamento": "1",
+    "filial": "1",
+    "dataAdmissao": "04/04/2023",
+    "salarioBase": 3676.93,
+    "cpf": "",
+    "email": "",
+    "telefone": "",
+    "status": "ATIVO",
+    "endereco": {
+      "logradouro": "",
+      "numero": "",
+      "bairro": "",
+      "cidade": "",
+      "uf": "",
+      "cep": ""
+    },
+    "contatosFamiliares": [],
+    "dadosBancarios": {
+      "banco": "",
+      "agencia": "",
+      "conta": "",
+      "tipoConta": "CORRENTE"
+    },
+    "cadastroCompleto": false
+  },
+  {
+    "codigo": "21",
+    "nome": "DALILA DE LARA",
+    "cbo": "411025",
+    "cargo": "AUXILIAR DE CARTORIO",
+    "departamento": "1",
+    "filial": "1",
+    "dataAdmissao": "03/03/2023",
+    "salarioBase": 2650.87,
+    "cpf": "",
+    "email": "",
+    "telefone": "",
+    "status": "ATIVO",
+    "endereco": {
+      "logradouro": "",
+      "numero": "",
+      "bairro": "",
+      "cidade": "",
+      "uf": "",
+      "cep": ""
+    },
+    "contatosFamiliares": [],
+    "dadosBancarios": {
+      "banco": "",
+      "agencia": "",
+      "conta": "",
+      "tipoConta": "CORRENTE"
+    },
+    "cadastroCompleto": false
+  },
+  {
+    "codigo": "10",
+    "nome": "DAYANA MARA GARBUIO",
+    "cbo": "351405",
+    "cargo": "ESCREVENTE I",
+    "departamento": "1",
+    "filial": "1",
+    "dataAdmissao": "02/03/2023",
+    "salarioBase": 3518.38,
+    "cpf": "",
+    "email": "",
+    "telefone": "",
+    "status": "ATIVO",
+    "endereco": {
+      "logradouro": "",
+      "numero": "",
+      "bairro": "",
+      "cidade": "",
+      "uf": "",
+      "cep": ""
+    },
+    "contatosFamiliares": [],
+    "dadosBancarios": {
+      "banco": "",
+      "agencia": "",
+      "conta": "",
+      "tipoConta": "CORRENTE"
+    },
+    "cadastroCompleto": false
+  },
+  {
+    "codigo": "13",
+    "nome": "DEJANIRA MAINARDES",
+    "cbo": "411025",
+    "cargo": "AUXILIAR DE CARTORIO",
+    "departamento": "1",
+    "filial": "1",
+    "dataAdmissao": "02/03/2023",
+    "salarioBase": 2650.87,
+    "cpf": "",
+    "email": "",
+    "telefone": "",
+    "status": "ATIVO",
+    "endereco": {
+      "logradouro": "",
+      "numero": "",
+      "bairro": "",
+      "cidade": "",
+      "uf": "",
+      "cep": ""
+    },
+    "contatosFamiliares": [],
+    "dadosBancarios": {
+      "banco": "",
+      "agencia": "",
+      "conta": "",
+      "tipoConta": "CORRENTE"
+    },
+    "cadastroCompleto": false
+  },
+  {
+    "codigo": "77",
+    "nome": "GABRIEL STREIDENBERGER PAULIN",
+    "cbo": "411025",
+    "cargo": "AUXILIAR DE CARTORIO",
+    "departamento": "1",
+    "filial": "1",
+    "dataAdmissao": "30/04/2026",
+    "salarioBase": 2311.21,
+    "cpf": "",
+    "email": "",
+    "telefone": "",
+    "status": "ATIVO",
+    "endereco": {
+      "logradouro": "",
+      "numero": "",
+      "bairro": "",
+      "cidade": "",
+      "uf": "",
+      "cep": ""
+    },
+    "contatosFamiliares": [],
+    "dadosBancarios": {
+      "banco": "",
+      "agencia": "",
+      "conta": "",
+      "tipoConta": "CORRENTE"
+    },
+    "cadastroCompleto": false
+  },
+  {
+    "codigo": "46",
+    "nome": "GABRIELA ZACACHUCA ALVES DOS SANTOS",
+    "cbo": "411025",
+    "cargo": "AUXILIAR DE CARTORIO",
+    "departamento": "1",
+    "filial": "1",
+    "dataAdmissao": "22/11/2024",
+    "salarioBase": 2962.55,
+    "cpf": "",
+    "email": "",
+    "telefone": "",
+    "status": "ATIVO",
+    "endereco": {
+      "logradouro": "",
+      "numero": "",
+      "bairro": "",
+      "cidade": "",
+      "uf": "",
+      "cep": ""
+    },
+    "contatosFamiliares": [],
+    "dadosBancarios": {
+      "banco": "",
+      "agencia": "",
+      "conta": "",
+      "tipoConta": "CORRENTE"
+    },
+    "cadastroCompleto": false
+  },
+  {
+    "codigo": "4",
+    "nome": "JANAINA SILVA DA SILVA",
+    "cbo": "411025",
+    "cargo": "AUXILIAR DE CARTORIO",
+    "departamento": "1",
+    "filial": "1",
+    "dataAdmissao": "02/03/2023",
+    "salarioBase": 2650.87,
+    "cpf": "",
+    "email": "",
+    "telefone": "",
+    "status": "ATIVO",
+    "endereco": {
+      "logradouro": "",
+      "numero": "",
+      "bairro": "",
+      "cidade": "",
+      "uf": "",
+      "cep": ""
+    },
+    "contatosFamiliares": [],
+    "dadosBancarios": {
+      "banco": "",
+      "agencia": "",
+      "conta": "",
+      "tipoConta": "CORRENTE"
+    },
+    "cadastroCompleto": false
+  },
+  {
+    "codigo": "19",
+    "nome": "JEANE FRANCINE PEREIRA",
+    "cbo": "351405",
+    "cargo": "ESCREVENTE I",
+    "departamento": "1",
+    "filial": "1",
+    "dataAdmissao": "03/03/2023",
+    "salarioBase": 3518.38,
+    "cpf": "",
+    "email": "",
+    "telefone": "",
+    "status": "ATIVO",
+    "endereco": {
+      "logradouro": "",
+      "numero": "",
+      "bairro": "",
+      "cidade": "",
+      "uf": "",
+      "cep": ""
+    },
+    "contatosFamiliares": [],
+    "dadosBancarios": {
+      "banco": "",
+      "agencia": "",
+      "conta": "",
+      "tipoConta": "CORRENTE"
+    },
+    "cadastroCompleto": false
+  },
+  {
+    "codigo": "44",
+    "nome": "JENIFER SANTOS LIMA ADAO",
+    "cbo": "411025",
+    "cargo": "AUXILIAR DE CARTORIO",
+    "departamento": "1",
+    "filial": "1",
+    "dataAdmissao": "19/11/2024",
+    "salarioBase": 2678.91,
+    "cpf": "",
+    "email": "",
+    "telefone": "",
+    "status": "ATIVO",
+    "endereco": {
+      "logradouro": "",
+      "numero": "",
+      "bairro": "",
+      "cidade": "",
+      "uf": "",
+      "cep": ""
+    },
+    "contatosFamiliares": [],
+    "dadosBancarios": {
+      "banco": "",
+      "agencia": "",
+      "conta": "",
+      "tipoConta": "CORRENTE"
+    },
+    "cadastroCompleto": false
+  },
+  {
+    "codigo": "61",
+    "nome": "JESSIKA AMARAL",
+    "cbo": "411025",
+    "cargo": "AUXILIAR DE CARTORIO",
+    "departamento": "1",
+    "filial": "1",
+    "dataAdmissao": "28/05/2025",
+    "salarioBase": 2311.21,
+    "cpf": "",
+    "email": "",
+    "telefone": "",
+    "status": "ATIVO",
+    "endereco": {
+      "logradouro": "",
+      "numero": "",
+      "bairro": "",
+      "cidade": "",
+      "uf": "",
+      "cep": ""
+    },
+    "contatosFamiliares": [],
+    "dadosBancarios": {
+      "banco": "",
+      "agencia": "",
+      "conta": "",
+      "tipoConta": "CORRENTE"
+    },
+    "cadastroCompleto": false
+  },
+  {
+    "codigo": "54",
+    "nome": "LETICIA PEREIRA FERNANDES",
+    "cbo": "411025",
+    "cargo": "AUXILIAR DE CARTORIO",
+    "departamento": "1",
+    "filial": "1",
+    "dataAdmissao": "30/01/2025",
+    "salarioBase": 2626.38,
+    "cpf": "",
+    "email": "",
+    "telefone": "",
+    "status": "ATIVO",
+    "endereco": {
+      "logradouro": "",
+      "numero": "",
+      "bairro": "",
+      "cidade": "",
+      "uf": "",
+      "cep": ""
+    },
+    "contatosFamiliares": [],
+    "dadosBancarios": {
+      "banco": "",
+      "agencia": "",
+      "conta": "",
+      "tipoConta": "CORRENTE"
+    },
+    "cadastroCompleto": false
+  },
+  {
+    "codigo": "79",
+    "nome": "MATHEUS HENRIQUE BORGES DA SILVA",
+    "cbo": "411025",
+    "cargo": "AUXILIAR DE CARTORIO",
+    "departamento": "1",
+    "filial": "1",
+    "dataAdmissao": "10/08/2026",
+    "salarioBase": 2200,
+    "cpf": "",
+    "email": "",
+    "telefone": "",
+    "status": "ATIVO",
+    "endereco": {
+      "logradouro": "",
+      "numero": "",
+      "bairro": "",
+      "cidade": "",
+      "uf": "",
+      "cep": ""
+    },
+    "contatosFamiliares": [],
+    "dadosBancarios": {
+      "banco": "",
+      "agencia": "",
+      "conta": "",
+      "tipoConta": "CORRENTE"
+    },
+    "cadastroCompleto": false
+  },
+  {
+    "codigo": "74",
+    "nome": "MICHAEL ALEXANDRE DOS SANTOS",
+    "cbo": "411025",
+    "cargo": "AUXILIAR DE CARTORIO",
+    "departamento": "1",
+    "filial": "1",
+    "dataAdmissao": "10/03/2026",
+    "salarioBase": 1996.05,
+    "cpf": "",
+    "email": "",
+    "telefone": "",
+    "status": "ATIVO",
+    "endereco": {
+      "logradouro": "",
+      "numero": "",
+      "bairro": "",
+      "cidade": "",
+      "uf": "",
+      "cep": ""
+    },
+    "contatosFamiliares": [],
+    "dadosBancarios": {
+      "banco": "",
+      "agencia": "",
+      "conta": "",
+      "tipoConta": "CORRENTE"
+    },
+    "cadastroCompleto": false
+  },
+  {
+    "codigo": "65",
+    "nome": "RUTE ESTEFANI",
+    "cbo": "411025",
+    "cargo": "AUXILIAR DE CARTORIO",
+    "departamento": "1",
+    "filial": "1",
+    "dataAdmissao": "09/09/2025",
+    "salarioBase": 3088.62,
+    "cpf": "",
+    "email": "",
+    "telefone": "",
+    "status": "ATIVO",
+    "endereco": {
+      "logradouro": "",
+      "numero": "",
+      "bairro": "",
+      "cidade": "",
+      "uf": "",
+      "cep": ""
+    },
+    "contatosFamiliares": [],
+    "dadosBancarios": {
+      "banco": "",
+      "agencia": "",
+      "conta": "",
+      "tipoConta": "CORRENTE"
+    },
+    "cadastroCompleto": false
+  },
+  {
+    "codigo": "18",
+    "nome": "RUTNEA ALVES GOMES",
+    "cbo": "351405",
+    "cargo": "ESCREVENTE II",
+    "departamento": "1",
+    "filial": "1",
+    "dataAdmissao": "03/03/2023",
+    "salarioBase": 6893.23,
+    "cpf": "",
+    "email": "",
+    "telefone": "",
+    "status": "ATIVO",
+    "endereco": {
+      "logradouro": "",
+      "numero": "",
+      "bairro": "",
+      "cidade": "",
+      "uf": "",
+      "cep": ""
+    },
+    "contatosFamiliares": [],
+    "dadosBancarios": {
+      "banco": "",
+      "agencia": "",
+      "conta": "",
+      "tipoConta": "CORRENTE"
+    },
+    "cadastroCompleto": false
+  },
+  {
+    "codigo": "73",
+    "nome": "THOMAS GONCALVES DE LIMA",
+    "cbo": "411025",
+    "cargo": "AUXILIAR DE CARTORIO",
+    "departamento": "1",
+    "filial": "1",
+    "dataAdmissao": "10/03/2026",
+    "salarioBase": 2311.21,
+    "cpf": "",
+    "email": "",
+    "telefone": "",
+    "status": "ATIVO",
+    "endereco": {
+      "logradouro": "",
+      "numero": "",
+      "bairro": "",
+      "cidade": "",
+      "uf": "",
+      "cep": ""
+    },
+    "contatosFamiliares": [],
+    "dadosBancarios": {
+      "banco": "",
+      "agencia": "",
+      "conta": "",
+      "tipoConta": "CORRENTE"
+    },
+    "cadastroCompleto": false
+  },
+  {
+    "codigo": "75",
+    "nome": "WALCYR JUNIOR ZANELATTO CARDOSO",
+    "cbo": "411025",
+    "cargo": "AUXILIAR DE CARTORIO",
+    "departamento": "1",
+    "filial": "1",
+    "dataAdmissao": "01/04/2026",
+    "salarioBase": 2311.21,
+    "cpf": "",
+    "email": "",
+    "telefone": "",
+    "status": "ATIVO",
+    "endereco": {
+      "logradouro": "",
+      "numero": "",
+      "bairro": "",
+      "cidade": "",
+      "uf": "",
+      "cep": ""
+    },
+    "contatosFamiliares": [],
+    "dadosBancarios": {
+      "banco": "",
+      "agencia": "",
+      "conta": "",
+      "tipoConta": "CORRENTE"
+    },
+    "cadastroCompleto": false
+  }
+]

@@ -126,9 +126,26 @@ export const FileProcessorModal: React.FC<FileProcessorModalProps> = ({
     }
   };
 
+  const resetModalState = () => {
+    setParsedRecords([]);
+    setParsingErrors([]);
+    setFileName(null);
+    setInputText('');
+    setRawExtractedText('');
+    setShowRawText(false);
+    setIsProcessing(false);
+  };
+
+  const handleCloseModal = () => {
+    resetModalState();
+    onClose();
+  };
+
   const processSelectedFile = async (file: File) => {
     setFileName(file.name);
     setParsingErrors([]);
+    setParsedRecords([]);
+    setRawExtractedText('');
 
     const isPdf = file.name.toLowerCase().endsWith('.pdf') || file.type === 'application/pdf';
 
@@ -142,6 +159,7 @@ export const FileProcessorModal: React.FC<FileProcessorModalProps> = ({
         try {
           const res = await extractPdfText(file, (msg) => setProgressStatus(msg));
           extractedPdfText = res.text;
+          setRawExtractedText(extractedPdfText);
         } catch (e) {
           console.warn('Extração preliminar de texto no cliente falhou, enviando para o servidor:', e);
         }
@@ -191,6 +209,7 @@ export const FileProcessorModal: React.FC<FileProcessorModalProps> = ({
     if (file) {
       processSelectedFile(file);
     }
+    e.target.value = '';
   };
 
   const handleDrop = (e: React.DragEvent<HTMLLabelElement>) => {
@@ -220,6 +239,10 @@ export const FileProcessorModal: React.FC<FileProcessorModalProps> = ({
       if (existing) {
         newOrUpdatedEmployees.push({
           ...existing,
+          nome: record.employee.nome || existing.nome,
+          cbo: record.employee.cbo || existing.cbo,
+          departamento: record.employee.departamento || existing.departamento,
+          filial: record.employee.filial || existing.filial,
           salarioBase: record.employee.salarioBase || existing.salarioBase,
           dataAdmissao: record.employee.dataAdmissao || existing.dataAdmissao,
           cargo: record.employee.cargo || existing.cargo
@@ -263,7 +286,7 @@ export const FileProcessorModal: React.FC<FileProcessorModalProps> = ({
 
     onCommitParsedData(newOrUpdatedEmployees, newReceipts);
     confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
-    onClose();
+    handleCloseModal();
   };
 
   const newCount = parsedRecords.filter(r => !existingEmployees.some(e => e.codigo === r.employee.codigo)).length;
