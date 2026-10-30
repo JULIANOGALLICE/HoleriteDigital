@@ -100,7 +100,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   onToggleBlockEmployee
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedDepartment, setSelectedDepartment] = useState('TODOS');
   const [selectedMonth, setSelectedMonth] = useState('Setembro de 2026');
   const [signatureFilter, setSignatureFilter] = useState<'ALL' | 'PENDING' | 'SIGNED'>('ALL');
   const [sortBy, setSortBy] = useState<'CODIGO' | 'NOME'>('CODIGO');
@@ -143,15 +142,13 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
         (emp.cpf && emp.cpf.includes(searchTerm)) ||
         emp.cargo.toLowerCase().includes(searchTerm.toLowerCase());
 
-      const matchesDept = selectedDepartment === 'TODOS' || emp.departamento === selectedDepartment;
-
       const receipt = receipts.find(r => r.employeeCodigo === emp.codigo && r.mesAno === selectedMonth);
       const matchesSignature =
         signatureFilter === 'ALL' ||
         (signatureFilter === 'PENDING' && receipt && receipt.statusAssinatura !== 'ASSINADO') ||
         (signatureFilter === 'SIGNED' && receipt && receipt.statusAssinatura === 'ASSINADO');
 
-      return matchesSearch && matchesDept && matchesSignature;
+      return matchesSearch && matchesSignature;
     });
 
     return [...filtered].sort((a, b) => {
@@ -169,9 +166,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
       }
       return sortDirection === 'ASC' ? comparison : -comparison;
     });
-  }, [employees, receipts, searchTerm, selectedDepartment, selectedMonth, signatureFilter, sortBy, sortDirection]);
-
-  const departments = Array.from(new Set(employees.map(e => e.departamento || 'CARTÓRIO GERAL')));
+  }, [employees, receipts, searchTerm, selectedMonth, signatureFilter, sortBy, sortDirection]);
 
   // Lista dinâmica de meses com base nos holerites cadastrados no sistema
   const availableMonths = useMemo(() => {
@@ -179,9 +174,9 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
     receipts.forEach(r => {
       if (r.mesAno && !list.includes(r.mesAno)) list.push(r.mesAno);
     });
-    ['Setembro de 2026', 'Agosto de 2026', 'Julho de 2026'].forEach(m => {
-      if (!list.includes(m)) list.push(m);
-    });
+    if (list.length === 0) {
+      list.push('Setembro de 2026');
+    }
     return list;
   }, [receipts]);
 
@@ -657,23 +652,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               </button>
             </div>
 
-            {/* Department Filter */}
-            <div className="flex items-center gap-1.5">
-              <Filter className="w-3.5 h-3.5 text-slate-500" />
-              <select
-                value={selectedDepartment}
-                onChange={(e) => setSelectedDepartment(e.target.value)}
-                className="bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
-              >
-                <option value="TODOS">Todos os Departamentos</option>
-                {departments.map((d, i) => (
-                  <option key={i} value={d}>
-                    {d}
-                  </option>
-                ))}
-              </select>
-            </div>
-
             {/* Month Filter */}
             <select
               value={selectedMonth}
@@ -718,7 +696,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                       )}
                     </div>
                     <p className="text-[11px] text-slate-500 mt-0.5">
-                      {emp.cargo} • {emp.departamento}
+                      {emp.cargo}
                     </p>
                   </div>
                   <div className="flex flex-col items-end gap-1">
@@ -911,7 +889,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                     )}
                   </div>
                 </th>
-                <th className="py-3 px-4">Departamento</th>
                 <th className="py-3 px-4">Admissão</th>
                 <th className="py-3 px-4">Telefone / Familiares</th>
                 <th className="py-3 px-4 text-right">Líquido ({selectedMonth.split(' ')[0]})</th>
@@ -954,10 +931,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                         <span>•</span>
                         <span>CPF: {emp.cpf || 'Pendente'}</span>
                       </div>
-                    </td>
-
-                    <td className="py-3 px-4 text-slate-700 font-medium">
-                      {emp.departamento}
                     </td>
 
                     <td className="py-3 px-4 text-slate-600">

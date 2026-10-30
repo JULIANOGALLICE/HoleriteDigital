@@ -98,17 +98,13 @@ export const ReceiptViewer: React.FC<ReceiptViewerProps> = ({
                 <span className="text-[9px] text-slate-500 block uppercase">Código</span>
                 <span className="font-bold text-sm text-slate-950">{employee.codigo}</span>
               </div>
-              <div className="col-span-6 sm:col-span-5">
+              <div className="col-span-7 sm:col-span-7">
                 <span className="text-[9px] text-slate-500 block uppercase">Nome do Colaborador</span>
                 <span className="font-bold text-xs text-slate-950">{employee.nome}</span>
               </div>
-              <div className="col-span-2">
+              <div className="col-span-3 sm:col-span-2">
                 <span className="text-[9px] text-slate-500 block uppercase">CBO</span>
                 <span className="font-semibold">{employee.cbo || '351405'}</span>
-              </div>
-              <div className="col-span-2">
-                <span className="text-[9px] text-slate-500 block uppercase">Departamento</span>
-                <span className="font-semibold">{employee.departamento || 'GERAL'}</span>
               </div>
               <div className="col-span-12 sm:col-span-2">
                 <span className="text-[9px] text-slate-500 block uppercase">Admissão</span>

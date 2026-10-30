@@ -181,30 +181,20 @@ export function generatePayReceiptPDF(
   doc.setLineWidth(0.2);
   doc.line(margin, curY + 9.6, rightEdge, curY + 9.6);
 
-  // Row 2 - Labels & Values (DEPARTAMENTO / SETOR | CPF | PIS / PASEP | ADMISSÃO)
+  // Row 2 - Labels & Values (CPF | PIS / PASEP | DATA ADMISSÃO)
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(6.5);
   doc.setTextColor(100, 116, 139);
-  doc.text('DEPARTAMENTO / SETOR', margin + 3, curY + 13.0);
-  doc.text('CPF', margin + 70, curY + 13.0);
-  doc.text('PIS / PASEP', margin + 110, curY + 13.0);
-  doc.text('DATA ADMISSÃO', margin + 150, curY + 13.0);
+  doc.text('CPF', margin + 3, curY + 13.0);
+  doc.text('PIS / PASEP', margin + 70, curY + 13.0);
+  doc.text('DATA ADMISSÃO', margin + 140, curY + 13.0);
 
   doc.setFont('helvetica', 'bold');
-  let deptoSize = 7.0;
-  doc.setFontSize(deptoSize);
   doc.setTextColor(30, 41, 59);
-  const deptoText = employee.departamento || 'GERAL';
-  while (doc.getTextWidth(deptoText) > 63 && deptoSize > 5.6) {
-    deptoSize -= 0.3;
-    doc.setFontSize(deptoSize);
-  }
-  doc.text(deptoText, margin + 3, curY + 16.4);
-
   doc.setFontSize(7.2);
-  doc.text(employee.cpf || '***.***.***-**', margin + 70, curY + 16.4);
-  doc.text(employee.pisPasep || '-', margin + 110, curY + 16.4);
-  doc.text(employee.dataAdmissao || '02/03/2023', margin + 150, curY + 16.4);
+  doc.text(employee.cpf || '***.***.***-**', margin + 3, curY + 16.4);
+  doc.text(employee.pisPasep || '-', margin + 70, curY + 16.4);
+  doc.text(employee.dataAdmissao || '02/03/2023', margin + 140, curY + 16.4);
 
   curY += empBoxHeight;
 

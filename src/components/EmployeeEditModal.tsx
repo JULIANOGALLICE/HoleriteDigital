@@ -278,16 +278,6 @@ export const EmployeeEditModal: React.FC<EmployeeEditModalProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-slate-700 font-semibold mb-1">Departamento / Setor</label>
-                  <input
-                    type="text"
-                    value={formData.departamento}
-                    onChange={(e) => setFormData({ ...formData, departamento: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  />
-                </div>
-
-                <div>
                   <label className="block text-slate-700 font-semibold mb-1">CBO (Classificação Brasileira)</label>
                   <input
                     type="text"

@@ -202,6 +202,66 @@ const EMPLOYEES_FILE = path.resolve(__dirname, 'employees-data.json');
 const RECEIPTS_FILE = path.resolve(__dirname, 'receipts-data.json');
 const SYSTEM_LOGS_FILE = path.resolve(__dirname, 'system-logs-data.json');
 const INCOME_REPORTS_FILE = path.resolve(__dirname, 'income-reports-data.json');
+const DELETED_FILE = path.resolve(__dirname, 'deleted-data.json');
+
+interface TombstonesData {
+  deletedEmployees: string[];
+  deletedReceipts: string[];
+  deletedUsers: string[];
+  deletedIrpf: string[];
+}
+
+function readServerTombstones(): TombstonesData {
+  const defaults: TombstonesData = {
+    deletedEmployees: [],
+    deletedReceipts: ['rec-6-2026-07', 'rec-6-2026-08', 'rec-6-2026-09'],
+    deletedUsers: [],
+    deletedIrpf: []
+  };
+  try {
+    if (fs.existsSync(DELETED_FILE)) {
+      const parsed = JSON.parse(fs.readFileSync(DELETED_FILE, 'utf-8'));
+      return {
+        deletedEmployees: Array.isArray(parsed.deletedEmployees)
+          ? Array.from(new Set(parsed.deletedEmployees.map(String)))
+          : defaults.deletedEmployees,
+        deletedReceipts: Array.isArray(parsed.deletedReceipts)
+          ? Array.from(new Set(parsed.deletedReceipts.map(String)))
+          : defaults.deletedReceipts,
+        deletedUsers: Array.isArray(parsed.deletedUsers)
+          ? Array.from(new Set(parsed.deletedUsers.map(String)))
+          : defaults.deletedUsers,
+        deletedIrpf: Array.isArray(parsed.deletedIrpf)
+          ? Array.from(new Set(parsed.deletedIrpf.map(String)))
+          : defaults.deletedIrpf
+      };
+    }
+  } catch (e) {}
+  return defaults;
+}
+
+function writeServerTombstones(data: Partial<TombstonesData>): TombstonesData {
+  const current = readServerTombstones();
+  const next: TombstonesData = {
+    deletedEmployees: Array.isArray(data.deletedEmployees) ? Array.from(new Set(data.deletedEmployees.map(String))) : current.deletedEmployees,
+    deletedReceipts: Array.isArray(data.deletedReceipts) ? Array.from(new Set(data.deletedReceipts.map(String))) : current.deletedReceipts,
+    deletedUsers: Array.isArray(data.deletedUsers) ? Array.from(new Set(data.deletedUsers.map(String))) : current.deletedUsers,
+    deletedIrpf: Array.isArray(data.deletedIrpf) ? Array.from(new Set(data.deletedIrpf.map(String))) : current.deletedIrpf
+  };
+  try {
+    fs.writeFileSync(DELETED_FILE, JSON.stringify(next, null, 2), 'utf-8');
+  } catch (e) {}
+  return next;
+}
+
+app.get('/api/tombstones', (_req, res) => {
+  return res.json({ success: true, tombstones: readServerTombstones() });
+});
+
+app.post('/api/tombstones', (req, res) => {
+  const updated = writeServerTombstones(req.body || {});
+  return res.json({ success: true, tombstones: updated });
+});
 
 // 0. API: Get & Save System Configuration (Permanent Server-Side Storage)
 app.get('/api/config', (_req, res) => {
@@ -235,9 +295,15 @@ app.post('/api/config', (req, res) => {
 app.get('/api/users', (_req, res) => {
   try {
     if (fs.existsSync(USERS_FILE)) {
+      const tombstones = readServerTombstones();
+      const delUsers = new Set(tombstones.deletedUsers);
+      const delEmps = new Set(tombstones.deletedEmployees);
       const content = fs.readFileSync(USERS_FILE, 'utf-8');
       const data = JSON.parse(content);
-      return res.json({ success: true, users: Array.isArray(data) ? data : [] });
+      const list = Array.isArray(data)
+        ? data.filter((u: any) => !delUsers.has(String(u.uid || '')) && !(u.role === 'COLABORADOR' && delEmps.has(String(u.employeeCodigo || '').trim())))
+        : [];
+      return res.json({ success: true, users: list });
     }
   } catch (err: any) {
     console.error('Error reading users-data.json:', err);
@@ -263,9 +329,14 @@ app.post('/api/users', (req, res) => {
 app.get('/api/employees', (_req, res) => {
   try {
     if (fs.existsSync(EMPLOYEES_FILE)) {
+      const tombstones = readServerTombstones();
+      const delEmps = new Set(tombstones.deletedEmployees);
       const content = fs.readFileSync(EMPLOYEES_FILE, 'utf-8');
       const data = JSON.parse(content);
-      return res.json({ success: true, employees: Array.isArray(data) ? data : [] });
+      const list = Array.isArray(data)
+        ? data.filter((e: any) => !delEmps.has(String(e.codigo || '').trim()))
+        : [];
+      return res.json({ success: true, employees: list });
     }
   } catch (err: any) {
     console.error('Error reading employees-data.json:', err);
@@ -291,9 +362,15 @@ app.post('/api/employees', (req, res) => {
 app.get('/api/receipts', (_req, res) => {
   try {
     if (fs.existsSync(RECEIPTS_FILE)) {
+      const tombstones = readServerTombstones();
+      const delRecs = new Set(tombstones.deletedReceipts);
+      const delEmps = new Set(tombstones.deletedEmployees);
       const content = fs.readFileSync(RECEIPTS_FILE, 'utf-8');
       const data = JSON.parse(content);
-      return res.json({ success: true, receipts: Array.isArray(data) ? data : [] });
+      const list = Array.isArray(data)
+        ? data.filter((r: any) => !delRecs.has(String(r.id || '')) && !delEmps.has(String(r.employeeCodigo || '').trim()))
+        : [];
+      return res.json({ success: true, receipts: list });
     }
   } catch (err: any) {
     console.error('Error reading receipts-data.json:', err);

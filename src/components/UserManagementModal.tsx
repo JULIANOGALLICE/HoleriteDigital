@@ -295,16 +295,22 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
   };
 
   // Filter users
-  const filteredUsers = users.filter(u => {
-    const matchesSearch =
-      u.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      u.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (u.employeeCodigo && u.employeeCodigo.includes(searchTerm));
+  const filteredUsers = users
+    .filter(u => {
+      const matchesSearch =
+        u.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        u.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (u.employeeCodigo && u.employeeCodigo.includes(searchTerm));
 
-    const matchesRole = roleFilter === 'TODOS' || u.role === roleFilter;
+      const matchesRole = roleFilter === 'TODOS' || u.role === roleFilter;
 
-    return matchesSearch && matchesRole;
-  });
+      return matchesSearch && matchesRole;
+    })
+    .sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt-BR', { sensitivity: 'base' }));
+
+  const sortedEmployees = [...employees].sort((a, b) =>
+    (a.nome || '').localeCompare(b.nome || '', 'pt-BR', { sensitivity: 'base' })
+  );
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto">
@@ -875,9 +881,9 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                   className="w-full px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium bg-white"
                 >
                   <option value="">-- Selecione o colaborador correspondente --</option>
-                  {employees.map((emp) => (
+                  {sortedEmployees.map((emp) => (
                     <option key={emp.codigo} value={emp.codigo}>
-                      #{emp.codigo} - {emp.nome} ({emp.cargo})
+                      {emp.nome} (#{emp.codigo} - {emp.cargo})
                     </option>
                   ))}
                 </select>
@@ -1078,9 +1084,9 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                   className="w-full px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium bg-white"
                 >
                   <option value="">-- Sem vínculo direto --</option>
-                  {employees.map((emp) => (
+                  {sortedEmployees.map((emp) => (
                     <option key={emp.codigo} value={emp.codigo}>
-                      #{emp.codigo} - {emp.nome} ({emp.cargo})
+                      {emp.nome} (#{emp.codigo} - {emp.cargo})
                     </option>
                   ))}
                 </select>

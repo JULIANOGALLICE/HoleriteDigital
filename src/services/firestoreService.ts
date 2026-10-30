@@ -219,6 +219,27 @@ export async function saveReceiptFirestore(receipt: PayReceipt): Promise<void> {
   }
 }
 
+export async function saveReceiptsBatchFirestore(receiptsList: PayReceipt[]): Promise<void> {
+  if (!receiptsList || receiptsList.length === 0) return;
+  const CHUNK_SIZE = 150;
+  for (let i = 0; i < receiptsList.length; i += CHUNK_SIZE) {
+    const chunk = receiptsList.slice(i, i + CHUNK_SIZE);
+    try {
+      const batch = writeBatch(db);
+      chunk.forEach(rec => {
+        const ref = doc(db, 'receipts', rec.id);
+        batch.set(ref, cleanUndefined(rec), { merge: true });
+      });
+      await batch.commit();
+    } catch (batchError) {
+      console.warn('saveReceiptsBatchFirestore chunk error, fallback to individual sets:', batchError);
+      await Promise.allSettled(
+        chunk.map(rec => setDoc(doc(db, 'receipts', rec.id), cleanUndefined(rec), { merge: true }))
+      );
+    }
+  }
+}
+
 export async function signReceiptFirestore(
   receiptId: string,
   codigoAssinatura: string,
@@ -248,9 +269,31 @@ export async function signReceiptFirestore(
   }
 }
 
-export async function deleteReceiptFirestore(receiptId: string): Promise<void> {
+export async function deleteReceiptFirestore(
+  receiptId: string,
+  employeeCodigo?: string,
+  competencia?: string
+): Promise<void> {
   try {
     await deleteDoc(doc(db, 'receipts', receiptId));
+    if (employeeCodigo) {
+      const cleanCode = String(employeeCodigo).trim();
+      const q = competencia
+        ? query(
+            collection(db, 'receipts'),
+            where('employeeCodigo', '==', cleanCode),
+            where('competencia', '==', competencia)
+          )
+        : query(collection(db, 'receipts'), where('employeeCodigo', '==', cleanCode));
+      const snap = await getDocs(q);
+      const extra: Promise<void>[] = [];
+      snap.forEach(d => {
+        if (!competencia || d.data()?.competencia === competencia || d.id === receiptId) {
+          extra.push(deleteDoc(d.ref));
+        }
+      });
+      if (extra.length > 0) await Promise.allSettled(extra);
+    }
   } catch (error) {
     console.warn('deleteReceiptFirestore notice:', error);
   }

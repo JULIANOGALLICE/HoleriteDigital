@@ -1,324 +1,5 @@
 [
   {
-    "id": "rec-6-2026-09",
-    "employeeCodigo": "6",
-    "competencia": "2026-09",
-    "mesAno": "Setembro de 2026",
-    "tipoFolha": "Folha Mensal",
-    "empregador": {
-      "razaoSocial": "FRANCISCO JOSE BARBOSA NOBRE",
-      "cei": "800136945806",
-      "centroCusto": "GERAL",
-      "regime": "Mensalista"
-    },
-    "salarioBase": 8030.05,
-    "salContrINSS": 8475.55,
-    "baseCalcFGTS": 10784.68,
-    "fgtsDoMes": 862.77,
-    "baseCalcIRRF": 9972.61,
-    "faixaIRRF": 27.5,
-    "totalVencimentos": 10960.68,
-    "totalDescontos": 5829.79,
-    "valorLiquido": 5130.89,
-    "dataEmissao": "30/09/2026",
-    "statusAssinatura": "ASSINADO",
-    "historicoEnvios": [
-      {
-        "id": "env-1",
-        "tipo": "WHATSAPP",
-        "data": "01/10/2026 09:30",
-        "destinatario": "(11) 98124-7763",
-        "status": "ENTREGUE"
-      },
-      {
-        "id": "env-2",
-        "tipo": "EMAIL",
-        "data": "01/10/2026 09:31",
-        "destinatario": "JulianoGallice@gmail.com",
-        "status": "ENTREGUE"
-      }
-    ],
-    "itens": [
-      {
-        "codigo": "1",
-        "descricao": "HORAS NORMAIS",
-        "referencia": "220:00",
-        "vencimento": 8030.05,
-        "desconto": null
-      },
-      {
-        "codigo": "250",
-        "descricao": "REFLEXO EXTRAS DSR",
-        "referencia": "0,00",
-        "vencimento": 400.77,
-        "desconto": null
-      },
-      {
-        "codigo": "150",
-        "descricao": "HORAS EXTRAS",
-        "referencia": "36:36",
-        "vencimento": 2003.86,
-        "desconto": null
-      },
-      {
-        "codigo": "20",
-        "descricao": "GRATIFICACOES",
-        "referencia": "350,00",
-        "vencimento": 350,
-        "desconto": null
-      },
-      {
-        "codigo": "219",
-        "descricao": "ABONO - CLAUSULA 11ª CCT",
-        "referencia": "176,00",
-        "vencimento": 176,
-        "desconto": null
-      },
-      {
-        "codigo": "201",
-        "descricao": "DESCONTO CONVENIO MEDICO",
-        "referencia": "568,38",
-        "vencimento": null,
-        "desconto": 568.38
-      },
-      {
-        "codigo": "205",
-        "descricao": "PLANO DENTAL",
-        "referencia": "30,58",
-        "vencimento": null,
-        "desconto": 30.58
-      },
-      {
-        "codigo": "998",
-        "descricao": "I.N.S.S.",
-        "referencia": "9,16",
-        "vencimento": null,
-        "desconto": 988.07
-      },
-      {
-        "codigo": "999",
-        "descricao": "IMPOSTO DE RENDA",
-        "referencia": "27,50",
-        "vencimento": null,
-        "desconto": 1833.74
-      },
-      {
-        "codigo": "981",
-        "descricao": "DESC.ADIANT.SALARIAL",
-        "referencia": "2.409,02",
-        "vencimento": null,
-        "desconto": 2409.02
-      }
-    ],
-    "dataAssinatura": "01/10/2026 14:22:10",
-    "ipAssinatura": "189.120.44.18 (Certificado Digital)"
-  },
-  {
-    "id": "rec-6-2026-08",
-    "employeeCodigo": "6",
-    "competencia": "2026-08",
-    "mesAno": "Agosto de 2026",
-    "tipoFolha": "Folha Mensal",
-    "empregador": {
-      "razaoSocial": "FRANCISCO JOSE BARBOSA NOBRE",
-      "cei": "800136945806",
-      "centroCusto": "GERAL",
-      "regime": "Mensalista"
-    },
-    "salarioBase": 8030.05,
-    "salContrINSS": 8475.55,
-    "baseCalcFGTS": 10420.3,
-    "fgtsDoMes": 833.62,
-    "baseCalcIRRF": 9610.15,
-    "faixaIRRF": 27.5,
-    "totalVencimentos": 10596.3,
-    "totalDescontos": 5612.4,
-    "valorLiquido": 4983.9,
-    "dataEmissao": "31/08/2026",
-    "statusAssinatura": "ASSINADO",
-    "dataAssinatura": "02/09/2026 11:05:43",
-    "ipAssinatura": "189.120.44.18",
-    "historicoEnvios": [
-      {
-        "id": "env-3",
-        "tipo": "WHATSAPP",
-        "data": "01/09/2026 09:00",
-        "destinatario": "(11) 98124-7763",
-        "status": "ENTREGUE"
-      }
-    ],
-    "itens": [
-      {
-        "codigo": "1",
-        "descricao": "HORAS NORMAIS",
-        "referencia": "220:00",
-        "vencimento": 8030.05,
-        "desconto": null
-      },
-      {
-        "codigo": "250",
-        "descricao": "REFLEXO EXTRAS DSR",
-        "referencia": "0,00",
-        "vencimento": 340.25,
-        "desconto": null
-      },
-      {
-        "codigo": "150",
-        "descricao": "HORAS EXTRAS",
-        "referencia": "30:00",
-        "vencimento": 1700,
-        "desconto": null
-      },
-      {
-        "codigo": "20",
-        "descricao": "GRATIFICACOES",
-        "referencia": "350,00",
-        "vencimento": 350,
-        "desconto": null
-      },
-      {
-        "codigo": "219",
-        "descricao": "ABONO - CLAUSULA 11ª CCT",
-        "referencia": "176,00",
-        "vencimento": 176,
-        "desconto": null
-      },
-      {
-        "codigo": "201",
-        "descricao": "DESCONTO CONVENIO MEDICO",
-        "referencia": "",
-        "vencimento": null,
-        "desconto": 568.38
-      },
-      {
-        "codigo": "205",
-        "descricao": "PLANO DENTAL",
-        "referencia": "",
-        "vencimento": null,
-        "desconto": 30.58
-      },
-      {
-        "codigo": "998",
-        "descricao": "I.N.S.S.",
-        "referencia": "9,16",
-        "vencimento": null,
-        "desconto": 988.07
-      },
-      {
-        "codigo": "999",
-        "descricao": "IMPOSTO DE RENDA",
-        "referencia": "27,50",
-        "vencimento": null,
-        "desconto": 1616.35
-      },
-      {
-        "codigo": "981",
-        "descricao": "DESC.ADIANT.SALARIAL",
-        "referencia": "",
-        "vencimento": null,
-        "desconto": 2409.02
-      }
-    ]
-  },
-  {
-    "id": "rec-6-2026-07",
-    "employeeCodigo": "6",
-    "competencia": "2026-07",
-    "mesAno": "Julho de 2026",
-    "tipoFolha": "Folha Mensal",
-    "empregador": {
-      "razaoSocial": "FRANCISCO JOSE BARBOSA NOBRE",
-      "cei": "800136945806",
-      "centroCusto": "GERAL",
-      "regime": "Mensalista"
-    },
-    "salarioBase": 8030.05,
-    "salContrINSS": 8475.55,
-    "baseCalcFGTS": 10180,
-    "fgtsDoMes": 814.4,
-    "baseCalcIRRF": 9380,
-    "faixaIRRF": 27.5,
-    "totalVencimentos": 10356.05,
-    "totalDescontos": 5490.2,
-    "valorLiquido": 4865.85,
-    "dataEmissao": "31/07/2026",
-    "statusAssinatura": "ASSINADO",
-    "dataAssinatura": "03/08/2026 16:40:02",
-    "historicoEnvios": [],
-    "itens": [
-      {
-        "codigo": "1",
-        "descricao": "HORAS NORMAIS",
-        "referencia": "220:00",
-        "vencimento": 8030.05,
-        "desconto": null
-      },
-      {
-        "codigo": "250",
-        "descricao": "REFLEXO EXTRAS DSR",
-        "referencia": "0,00",
-        "vencimento": 300,
-        "desconto": null
-      },
-      {
-        "codigo": "150",
-        "descricao": "HORAS EXTRAS",
-        "referencia": "26:00",
-        "vencimento": 1500,
-        "desconto": null
-      },
-      {
-        "codigo": "20",
-        "descricao": "GRATIFICACOES",
-        "referencia": "350,00",
-        "vencimento": 350,
-        "desconto": null
-      },
-      {
-        "codigo": "219",
-        "descricao": "ABONO - CLAUSULA 11ª CCT",
-        "referencia": "176,00",
-        "vencimento": 176,
-        "desconto": null
-      },
-      {
-        "codigo": "201",
-        "descricao": "DESCONTO CONVENIO MEDICO",
-        "referencia": "",
-        "vencimento": null,
-        "desconto": 568.38
-      },
-      {
-        "codigo": "205",
-        "descricao": "PLANO DENTAL",
-        "referencia": "",
-        "vencimento": null,
-        "desconto": 30.58
-      },
-      {
-        "codigo": "998",
-        "descricao": "I.N.S.S.",
-        "referencia": "9,16",
-        "vencimento": null,
-        "desconto": 988.07
-      },
-      {
-        "codigo": "999",
-        "descricao": "IMPOSTO DE RENDA",
-        "referencia": "27,50",
-        "vencimento": null,
-        "desconto": 1494.15
-      },
-      {
-        "codigo": "981",
-        "descricao": "DESC.ADIANT.SALARIAL",
-        "referencia": "",
-        "vencimento": null,
-        "desconto": 2409.02
-      }
-    ]
-  },
-  {
     "id": "rec-1-2026-09",
     "employeeCodigo": "1",
     "competencia": "2026-09",
@@ -2973,6 +2654,55 @@
         "referencia": "0:01",
         "vencimento": null,
         "desconto": 0.21
+      }
+    ]
+  },
+  {
+    "id": "rec-80-2026-09",
+    "employeeCodigo": "80",
+    "competencia": "2026-09",
+    "mesAno": "Setembro de 2026",
+    "tipoFolha": "Folha Mensal",
+    "empregador": {
+      "razaoSocial": "FRANCISCO JOSE BARBOSA NOBRE",
+      "cei": "800136945806",
+      "centroCusto": "GERAL",
+      "regime": "Mensalista"
+    },
+    "salarioBase": 2537.08,
+    "salContrINSS": 2537.08,
+    "baseCalcFGTS": 2537.08,
+    "fgtsDoMes": 202.96,
+    "baseCalcIRRF": 1929.88,
+    "faixaIRRF": 0,
+    "totalVencimentos": 2537.08,
+    "totalDescontos": 965.13,
+    "valorLiquido": 1571.95,
+    "dataEmissao": "30/09/2026",
+    "statusAssinatura": "PENDENTE",
+    "importadoManualmente": true,
+    "historicoEnvios": [],
+    "itens": [
+      {
+        "codigo": "1",
+        "descricao": "HORAS NORMAIS",
+        "referencia": "220:00",
+        "vencimento": 2537.08,
+        "desconto": null
+      },
+      {
+        "codigo": "998",
+        "descricao": "I.N.S.S.",
+        "referencia": "8,04",
+        "vencimento": null,
+        "desconto": 204.01
+      },
+      {
+        "codigo": "981",
+        "descricao": "DESC.ADIANT.SALARIAL",
+        "referencia": "761,12",
+        "vencimento": null,
+        "desconto": 761.12
       }
     ]
   }

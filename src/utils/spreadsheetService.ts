@@ -54,7 +54,11 @@ export function exportEmployeesToXLSX(employees: Employee[], users: UserAccount[
     if (u.nome) usersByName.set(u.nome.trim().toLowerCase(), u);
   });
 
-  const rows = employees.map(emp => {
+  const sortedEmployees = [...employees].sort((a, b) =>
+    (a.nome || '').localeCompare(b.nome || '', 'pt-BR', { sensitivity: 'base' })
+  );
+
+  const rows = sortedEmployees.map(emp => {
     const codClean = (emp.codigo || '').trim().toLowerCase();
     const emailClean = (emp.email || '').trim().toLowerCase();
     const nameClean = (emp.nome || '').trim().toLowerCase();
@@ -66,7 +70,6 @@ export function exportEmployeesToXLSX(employees: Employee[], users: UserAccount[
       'Nome_Completo': emp.nome || '',
       'CPF': emp.cpf || '',
       'Cargo': emp.cargo || '',
-      'Departamento': emp.departamento || '',
       'Email_Acesso': matchedUser?.email || emp.email || '',
       'Telefone_WhatsApp': emp.telefone || '',
       'Senha_Inicial': matchedUser?.senha || '',
@@ -84,7 +87,6 @@ export function exportEmployeesToXLSX(employees: Employee[], users: UserAccount[
     { wch: 34 }, // Nome_Completo
     { wch: 16 }, // CPF
     { wch: 26 }, // Cargo
-    { wch: 22 }, // Departamento
     { wch: 32 }, // Email_Acesso
     { wch: 18 }, // Telefone_WhatsApp
     { wch: 16 }, // Senha_Inicial
@@ -128,7 +130,6 @@ export function downloadBlankEmployeesTemplateXLSX(): void {
       'Nome_Completo': 'Exemplo Silva da Silva',
       'CPF': '123.456.789-00',
       'Cargo': 'Escrevente',
-      'Departamento': 'Registro Civil',
       'Email_Acesso': 'exemplo.silva@cartorio.com.br',
       'Telefone_WhatsApp': '(34) 99888-7766',
       'Senha_Inicial': 'Mudar@123',
@@ -140,7 +141,6 @@ export function downloadBlankEmployeesTemplateXLSX(): void {
       'Nome_Completo': 'Maria Oliveira Santos',
       'CPF': '987.654.321-11',
       'Cargo': 'Auxiliar de Cartório',
-      'Departamento': 'Notas',
       'Email_Acesso': 'maria.oliveira@cartorio.com.br',
       'Telefone_WhatsApp': '(34) 99777-6655',
       'Senha_Inicial': 'Mudar@456',
@@ -155,7 +155,6 @@ export function downloadBlankEmployeesTemplateXLSX(): void {
     { wch: 32 },
     { wch: 16 },
     { wch: 22 },
-    { wch: 20 },
     { wch: 32 },
     { wch: 18 },
     { wch: 16 },
@@ -338,6 +337,8 @@ export async function parseAndAnalyzeSpreadsheet(
     });
   }
 
+  changes.sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt-BR', { sensitivity: 'base' }));
+
   return {
     totalRows: changes.length,
     matchedCount,
@@ -376,7 +377,7 @@ export function applySpreadsheetToEntities(
     const codClean = String(change.matricula).trim().toLowerCase();
     const existingEmp = employeesMap.get(codClean);
 
-    // 1. Atualizar Colaborador
+    // 1. Atualizar ou Criar Colaborador
     if (existingEmp) {
       if (change.newEmail) {
         existingEmp.email = change.newEmail.trim();
@@ -385,6 +386,37 @@ export function applySpreadsheetToEntities(
         existingEmp.telefone = change.newPhone.trim();
       }
       employeesMap.set(codClean, existingEmp);
+    } else if (change.matricula && change.nome) {
+      employeesMap.set(codClean, {
+        codigo: String(change.matricula).trim(),
+        nome: change.nome.trim().toUpperCase(),
+        cbo: '411025',
+        cargo: 'COLABORADOR',
+        departamento: '1',
+        filial: '1',
+        dataAdmissao: new Date().toLocaleDateString('pt-BR'),
+        salarioBase: 0,
+        cpf: change.cpf || '',
+        email: (change.newEmail || change.oldEmail || '').trim(),
+        telefone: (change.newPhone || change.oldPhone || '').trim(),
+        status: 'ATIVO',
+        endereco: {
+          logradouro: '',
+          numero: '',
+          bairro: '',
+          cidade: '',
+          uf: '',
+          cep: ''
+        },
+        contatosFamiliares: [],
+        dadosBancarios: {
+          banco: '',
+          agencia: '',
+          conta: '',
+          tipoConta: 'CORRENTE'
+        },
+        cadastroCompleto: false
+      });
     }
 
     // 2. Atualizar ou Criar Conta de Usuário
@@ -433,7 +465,11 @@ export function applySpreadsheetToEntities(
   });
 
   return {
-    updatedEmployees: Array.from(employeesMap.values()),
-    updatedUsers: Array.from(usersMap.values())
+    updatedEmployees: Array.from(employeesMap.values()).sort((a, b) =>
+      (a.nome || '').localeCompare(b.nome || '', 'pt-BR', { sensitivity: 'base' })
+    ),
+    updatedUsers: Array.from(usersMap.values()).sort((a, b) =>
+      (a.nome || '').localeCompare(b.nome || '', 'pt-BR', { sensitivity: 'base' })
+    )
   };
 }

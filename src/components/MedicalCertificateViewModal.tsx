@@ -147,7 +147,7 @@ export const MedicalCertificateViewModal: React.FC<MedicalCertificateViewModalPr
                 </span>
               </div>
               <p className="text-xs text-slate-300 mt-0.5">
-                {certificate.employeeNome} • Matrícula: {certificate.employeeCodigo} • {certificate.employeeDepartamento || 'Geral'}
+                {certificate.employeeNome} • Matrícula: {certificate.employeeCodigo}
               </p>
             </div>
           </div>

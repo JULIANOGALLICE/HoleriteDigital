@@ -235,10 +235,12 @@ export const FileProcessorModal: React.FC<FileProcessorModalProps> = ({
     const newReceipts: PayReceipt[] = [];
 
     parsedRecords.forEach(record => {
-      const existing = existingEmployees.find(e => e.codigo === record.employee.codigo);
+      const recCode = String(record.employee.codigo).trim();
+      const existing = existingEmployees.find(e => String(e.codigo).trim() === recCode);
       if (existing) {
         newOrUpdatedEmployees.push({
           ...existing,
+          codigo: recCode,
           nome: record.employee.nome || existing.nome,
           cbo: record.employee.cbo || existing.cbo,
           departamento: record.employee.departamento || existing.departamento,
@@ -249,7 +251,7 @@ export const FileProcessorModal: React.FC<FileProcessorModalProps> = ({
         });
       } else {
         const newEmp: Employee = {
-          codigo: record.employee.codigo,
+          codigo: recCode,
           nome: record.employee.nome,
           cbo: record.employee.cbo || '',
           cargo: record.employee.cargo || 'COLABORADOR',
@@ -281,7 +283,10 @@ export const FileProcessorModal: React.FC<FileProcessorModalProps> = ({
         newOrUpdatedEmployees.push(newEmp);
       }
 
-      newReceipts.push(record.receipt);
+      newReceipts.push({
+        ...record.receipt,
+        employeeCodigo: recCode
+      });
     });
 
     onCommitParsedData(newOrUpdatedEmployees, newReceipts);
@@ -289,7 +294,7 @@ export const FileProcessorModal: React.FC<FileProcessorModalProps> = ({
     handleCloseModal();
   };
 
-  const newCount = parsedRecords.filter(r => !existingEmployees.some(e => e.codigo === r.employee.codigo)).length;
+  const newCount = parsedRecords.filter(r => !existingEmployees.some(e => String(e.codigo).trim() === String(r.employee.codigo).trim())).length;
   const updateCount = parsedRecords.length - newCount;
   const totalNet = parsedRecords.reduce((acc, r) => acc + r.receipt.valorLiquido, 0);
 

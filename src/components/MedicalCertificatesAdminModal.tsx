@@ -238,7 +238,7 @@ export const MedicalCertificatesAdminModal: React.FC<MedicalCertificatesAdminMod
                       <td className="py-3 px-3.5">
                         <span className="font-bold text-slate-900 block">{cert.employeeNome}</span>
                         <span className="text-[10px] text-slate-500">
-                          Matrícula: {cert.employeeCodigo} • {cert.employeeDepartamento || 'Geral'}
+                          Matrícula: {cert.employeeCodigo}
                         </span>
                       </td>
 

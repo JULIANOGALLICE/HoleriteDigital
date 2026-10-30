@@ -92,6 +92,7 @@ export interface PayReceipt {
   ipAssinatura?: string;
   codigoAssinatura?: string;
   metodoAssinatura?: 'WHATSAPP' | 'EMAIL';
+  importadoManualmente?: boolean;
   historicoEnvios: Array<{
     id: string;
     tipo: 'WHATSAPP' | 'EMAIL';

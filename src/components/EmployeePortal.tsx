@@ -196,8 +196,6 @@ export const EmployeePortal: React.FC<EmployeePortalProps> = ({
               <p className="text-xs text-slate-300 mt-1 flex flex-wrap items-center gap-3">
                 <span className="font-semibold text-blue-200">{employee.cargo}</span>
                 <span>•</span>
-                <span>{employee.departamento}</span>
-                <span>•</span>
                 <span>Admissão: {employee.dataAdmissao}</span>
               </p>
             </div>
@@ -951,10 +949,6 @@ export const EmployeePortal: React.FC<EmployeePortalProps> = ({
                   <div>
                     <span className="text-slate-500 block">Cargo / Função</span>
                     <span className="font-bold text-slate-900">{employee.cargo}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 block">Departamento</span>
-                    <span className="font-bold text-slate-900">{employee.departamento}</span>
                   </div>
                   <div>
                     <span className="text-slate-500 block">Data de Admissão</span>

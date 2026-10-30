@@ -35,6 +35,7 @@ import {
   saveEmployeeFirestore,
   saveEmployeesBatchFirestore,
   saveReceiptFirestore,
+  saveReceiptsBatchFirestore,
   saveSystemConfigFirestore,
   signReceiptFirestore,
   clearAllDatabaseData,
@@ -78,9 +79,9 @@ const STORAGE_KEY_EMPLOYEES = 'holerite_employees_v2';
 const STORAGE_KEY_RECEIPTS = 'holerite_receipts_v2';
 const STORAGE_KEY_USERS = 'holerite_users_v2';
 const STORAGE_KEY_INCOME_REPORTS = 'holerite_income_reports_v2';
-const STORAGE_KEY_DELETED_EMPLOYEES = 'holerite_deleted_employees_v2';
+const STORAGE_KEY_DELETED_EMPLOYEES = 'holerite_deleted_employees_v3';
 const STORAGE_KEY_DELETED_RECEIPTS = 'holerite_deleted_receipts_v2';
-const STORAGE_KEY_DELETED_USERS = 'holerite_deleted_users_v2';
+const STORAGE_KEY_DELETED_USERS = 'holerite_deleted_users_v3';
 const STORAGE_KEY_DELETED_IRPF = 'holerite_deleted_irpf_v2';
 
 function loadTombstoneSet(key: string, defaultItems: string[] = []): Set<string> {
@@ -89,7 +90,7 @@ function loadTombstoneSet(key: string, defaultItems: string[] = []): Set<string>
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
-        return new Set<string>([...defaultItems, ...parsed.map(String)]);
+        return new Set<string>(parsed.map(String));
       }
     }
   } catch (e) {}
@@ -124,12 +125,29 @@ function isReceiptMathematicallyValid(r: PayReceipt): boolean {
 
 export default function App() {
   // Tombstone registries to prevent deleted records from being resurrected by snapshots or caches
-  const deletedEmployeesRef = useRef<Set<string>>(loadTombstoneSet(STORAGE_KEY_DELETED_EMPLOYEES, ['80']));
-  const deletedReceiptsRef = useRef<Set<string>>(loadTombstoneSet(STORAGE_KEY_DELETED_RECEIPTS));
-  const deletedUsersRef = useRef<Set<string>>(loadTombstoneSet(STORAGE_KEY_DELETED_USERS, ['user-80', 'user-colab-80']));
+  const DEFAULT_DELETED_RECEIPTS = ['rec-6-2026-07', 'rec-6-2026-08', 'rec-6-2026-09'];
+  const deletedEmployeesRef = useRef<Set<string>>(loadTombstoneSet(STORAGE_KEY_DELETED_EMPLOYEES, []));
+  const deletedReceiptsRef = useRef<Set<string>>(loadTombstoneSet(STORAGE_KEY_DELETED_RECEIPTS, DEFAULT_DELETED_RECEIPTS));
+  const deletedUsersRef = useRef<Set<string>>(loadTombstoneSet(STORAGE_KEY_DELETED_USERS, []));
   const deletedIrpfRef = useRef<Set<string>>(loadTombstoneSet(STORAGE_KEY_DELETED_IRPF));
   const verifiedEmployeesMapRef = useRef<Map<string, Employee>>(new Map(INITIAL_EMPLOYEES.map(e => [String(e.codigo).trim(), e])));
-  const verifiedReceiptsMapRef = useRef<Map<string, PayReceipt>>(new Map(INITIAL_RECEIPTS.map(r => [r.id, r])));
+
+  const syncServerTombstones = () => {
+    saveTombstoneSet(STORAGE_KEY_DELETED_EMPLOYEES, deletedEmployeesRef.current);
+    saveTombstoneSet(STORAGE_KEY_DELETED_RECEIPTS, deletedReceiptsRef.current);
+    saveTombstoneSet(STORAGE_KEY_DELETED_USERS, deletedUsersRef.current);
+    saveTombstoneSet(STORAGE_KEY_DELETED_IRPF, deletedIrpfRef.current);
+    fetch('/api/tombstones', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        deletedEmployees: Array.from(deletedEmployeesRef.current),
+        deletedReceipts: Array.from(deletedReceiptsRef.current),
+        deletedUsers: Array.from(deletedUsersRef.current),
+        deletedIrpf: Array.from(deletedIrpfRef.current)
+      })
+    }).catch(() => {});
+  };
 
   // Current user account session: Starts as null so the initial screen shows the Login Screen
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(null);
@@ -142,8 +160,8 @@ export default function App() {
 
   // Users state (dynamically managed by Gestor)
   const [users, setUsers] = useState<UserAccount[]>(() => {
-    const delUsers = loadTombstoneSet(STORAGE_KEY_DELETED_USERS, ['user-80', 'user-colab-80']);
-    const delEmps = loadTombstoneSet(STORAGE_KEY_DELETED_EMPLOYEES, ['80']);
+    const delUsers = loadTombstoneSet(STORAGE_KEY_DELETED_USERS, []);
+    const delEmps = loadTombstoneSet(STORAGE_KEY_DELETED_EMPLOYEES, []);
     try {
       const saved = localStorage.getItem(STORAGE_KEY_USERS);
       if (saved) {
@@ -161,7 +179,7 @@ export default function App() {
 
   // Core state synced with Firebase Firestore
   const [employees, setEmployees] = useState<Employee[]>(() => {
-    const delEmps = loadTombstoneSet(STORAGE_KEY_DELETED_EMPLOYEES, ['80']);
+    const delEmps = loadTombstoneSet(STORAGE_KEY_DELETED_EMPLOYEES, []);
     try {
       const saved = localStorage.getItem(STORAGE_KEY_EMPLOYEES);
       if (saved) {
@@ -173,18 +191,21 @@ export default function App() {
   });
 
   const [receipts, setReceipts] = useState<PayReceipt[]>(() => {
-    const delRecs = loadTombstoneSet(STORAGE_KEY_DELETED_RECEIPTS);
-    const delEmps = loadTombstoneSet(STORAGE_KEY_DELETED_EMPLOYEES, ['80']);
+    const delRecs = loadTombstoneSet(STORAGE_KEY_DELETED_RECEIPTS, DEFAULT_DELETED_RECEIPTS);
+    const delEmps = loadTombstoneSet(STORAGE_KEY_DELETED_EMPLOYEES, []);
     try {
       const saved = localStorage.getItem(STORAGE_KEY_RECEIPTS);
       if (saved) {
         const parsed: PayReceipt[] = JSON.parse(saved);
-        return parsed.filter(
-          r => !delRecs.has(r.id) && !delEmps.has(String(r.employeeCodigo).trim())
-        );
+        return parsed.filter(r => {
+          const empCode = String(r.employeeCodigo).trim();
+          if (delRecs.has(r.id) || delEmps.has(empCode)) return false;
+          if (empCode === '6' && !r.importadoManualmente) return false;
+          return true;
+        });
       }
     } catch (e) {}
-    return INITIAL_RECEIPTS;
+    return [];
   });
 
   const [systemConfig, setSystemConfig] = useState<SystemConfig>(() => {
@@ -286,12 +307,27 @@ export default function App() {
       })
       .catch(() => {});
 
-    // Ensure tombstones are persisted and cleaned in Firestore on boot
-    saveTombstoneSet(STORAGE_KEY_DELETED_EMPLOYEES, deletedEmployeesRef.current);
-    saveTombstoneSet(STORAGE_KEY_DELETED_USERS, deletedUsersRef.current);
-    deletedEmployeesRef.current.forEach(code => {
-      deleteEmployeeFirestore(code).catch(() => {});
-    });
+    fetch('/api/tombstones')
+      .then(res => res.json())
+      .then(data => {
+        if (data?.success && data.tombstones) {
+          deletedEmployeesRef.current = new Set((data.tombstones.deletedEmployees || []).map(String));
+          deletedUsersRef.current = new Set((data.tombstones.deletedUsers || []).map(String));
+          (data.tombstones.deletedReceipts || []).forEach((id: string) => deletedReceiptsRef.current.add(String(id)));
+          (data.tombstones.deletedIrpf || []).forEach((id: string) => deletedIrpfRef.current.add(String(id)));
+          saveTombstoneSet(STORAGE_KEY_DELETED_EMPLOYEES, deletedEmployeesRef.current);
+          saveTombstoneSet(STORAGE_KEY_DELETED_USERS, deletedUsersRef.current);
+          saveTombstoneSet(STORAGE_KEY_DELETED_RECEIPTS, deletedReceiptsRef.current);
+          saveTombstoneSet(STORAGE_KEY_DELETED_IRPF, deletedIrpfRef.current);
+          deletedEmployeesRef.current.forEach(code => {
+            deleteEmployeeFirestore(code).catch(() => {});
+          });
+          deletedReceiptsRef.current.forEach(recId => {
+            deleteReceiptFirestore(recId).catch(() => {});
+          });
+        }
+      })
+      .catch(() => {});
 
     // Fetch permanent server-side backups for users, employees, and receipts
     fetch('/api/users')
@@ -350,9 +386,6 @@ export default function App() {
                     }
                   : { ...e, codigo: code };
                 map.set(code, mergedEmp);
-                if (!existing || existing.salarioBase < 500 || existing.salarioBase !== mergedEmp.salarioBase) {
-                  saveEmployeeFirestore(mergedEmp).catch(() => {});
-                }
               }
             });
             const list = Array.from(map.values());
@@ -367,23 +400,27 @@ export default function App() {
       .then(res => res.json())
       .then(data => {
         if (data?.success && Array.isArray(data.receipts)) {
-          data.receipts.forEach((r: PayReceipt) => {
-            const empCode = String(r.employeeCodigo).trim();
-            if (!deletedReceiptsRef.current.has(r.id) && !deletedEmployeesRef.current.has(empCode) && isReceiptMathematicallyValid(r)) {
-              verifiedReceiptsMapRef.current.set(r.id, r);
-            }
-          });
           setReceipts(prev => {
             const map = new Map<string, PayReceipt>();
             prev.forEach(r => {
               const empCode = String(r.employeeCodigo).trim();
-              if (!deletedReceiptsRef.current.has(r.id) && !deletedEmployeesRef.current.has(empCode) && isReceiptMathematicallyValid(r)) {
+              if (
+                !deletedReceiptsRef.current.has(r.id) &&
+                !deletedEmployeesRef.current.has(empCode) &&
+                !(empCode === '6' && !r.importadoManualmente) &&
+                isReceiptMathematicallyValid(r)
+              ) {
                 map.set(r.id, r);
               }
             });
             data.receipts.forEach((r: PayReceipt) => {
               const empCode = String(r.employeeCodigo).trim();
-              if (!deletedReceiptsRef.current.has(r.id) && !deletedEmployeesRef.current.has(empCode)) {
+              if (
+                !deletedReceiptsRef.current.has(r.id) &&
+                !deletedEmployeesRef.current.has(empCode) &&
+                !(empCode === '6' && !r.importadoManualmente) &&
+                isReceiptMathematicallyValid(r)
+              ) {
                 const existing = prev.find(p => p.id === r.id);
                 const cleanRec: PayReceipt = {
                   ...r,
@@ -395,9 +432,6 @@ export default function App() {
                   historicoEnvios: existing?.historicoEnvios?.length ? existing.historicoEnvios : (r.historicoEnvios || [])
                 };
                 map.set(r.id, cleanRec);
-                if (!existing || !isReceiptMathematicallyValid(existing)) {
-                  saveReceiptFirestore(cleanRec).catch(() => {});
-                }
               }
             });
             const list = Array.from(map.values());
@@ -445,14 +479,22 @@ export default function App() {
           e => !deletedEmployeesRef.current.has(String(e.codigo).trim())
         );
 
-        setEmployees(() => {
+        setEmployees(prev => {
           const map = new Map<string, Employee>();
+          prev.forEach(e => {
+            const code = String(e.codigo).trim();
+            if (!deletedEmployeesRef.current.has(code)) {
+              map.set(code, { ...e, codigo: code });
+            }
+          });
           validRemote.forEach(e => {
             const code = String(e.codigo).trim();
+            const existing = map.get(code);
             const verified = verifiedEmployeesMapRef.current.get(code);
             // Se o registro remoto tinha salário corrompido (< 500, ex: 177), restaura o salário e dados oficiais verificados
             if (verified && (!e.salarioBase || e.salarioBase < 500)) {
               const healed: Employee = {
+                ...existing,
                 ...e,
                 codigo: code,
                 nome: verified.nome || e.nome,
@@ -464,7 +506,13 @@ export default function App() {
               map.set(code, healed);
               saveEmployeeFirestore(healed).catch(() => {});
             } else {
-              map.set(code, { ...e, codigo: code });
+              map.set(code, { ...existing, ...e, codigo: code });
+            }
+          });
+          const remoteCodes = new Set(validRemote.map(e => String(e.codigo).trim()));
+          map.forEach((emp, code) => {
+            if (!remoteCodes.has(code) && !deletedEmployeesRef.current.has(code)) {
+              saveEmployeeFirestore(emp).catch(() => {});
             }
           });
           const merged = Array.from(map.values());
@@ -478,48 +526,68 @@ export default function App() {
 
     const unsubReceipts = subscribeReceipts((remoteReceipts) => {
       if (remoteReceipts) {
+        let tombstoneAdded = false;
         remoteReceipts.forEach(r => {
           const empCode = String(r.employeeCodigo).trim();
-          if (deletedReceiptsRef.current.has(r.id) || deletedEmployeesRef.current.has(empCode)) {
-            deleteReceiptFirestore(r.id).catch(() => {});
+          const isUnimportedJuliano = empCode === '6' && !r.importadoManualmente;
+          if (
+            deletedReceiptsRef.current.has(r.id) ||
+            deletedEmployeesRef.current.has(empCode) ||
+            isUnimportedJuliano
+          ) {
+            if (!deletedReceiptsRef.current.has(r.id)) {
+              deletedReceiptsRef.current.add(r.id);
+              tombstoneAdded = true;
+            }
+            deleteReceiptFirestore(r.id, empCode, r.competencia).catch(() => {});
           }
         });
-
-        const validRemote = remoteReceipts.filter(
-          r => !deletedReceiptsRef.current.has(r.id) && !deletedEmployeesRef.current.has(String(r.employeeCodigo).trim())
-        );
-
-        if (validRemote.length > 0 || remoteReceipts.length === 0) {
-          setReceipts(() => {
-            const map = new Map<string, PayReceipt>();
-            validRemote.forEach(r => {
-              // Se o holerite no Firestore estava corrompido pela importação anterior (ex: Elaine com salarioBase 177 ou soma de rubricas != total), substitui pelo holerite íntegro
-              if (!isReceiptMathematicallyValid(r)) {
-                const verified = verifiedReceiptsMapRef.current.get(r.id);
-                if (verified) {
-                  const healed: PayReceipt = {
-                    ...verified,
-                    statusAssinatura: r.statusAssinatura || verified.statusAssinatura || 'PENDENTE',
-                    dataAssinatura: r.dataAssinatura || verified.dataAssinatura,
-                    ipAssinatura: r.ipAssinatura || verified.ipAssinatura,
-                    codigoAssinatura: r.codigoAssinatura || verified.codigoAssinatura,
-                    metodoAssinatura: r.metodoAssinatura || verified.metodoAssinatura,
-                    historicoEnvios: r.historicoEnvios?.length ? r.historicoEnvios : (verified.historicoEnvios || [])
-                  };
-                  map.set(r.id, healed);
-                  saveReceiptFirestore(healed).catch(() => {});
-                  return;
-                }
-              }
-              map.set(r.id, r);
-            });
-            const merged = Array.from(map.values());
-            try {
-              localStorage.setItem(STORAGE_KEY_RECEIPTS, JSON.stringify(merged));
-            } catch (e) {}
-            return merged;
-          });
+        if (tombstoneAdded) {
+          syncServerTombstones();
         }
+
+        const validRemote = remoteReceipts.filter(r => {
+          const empCode = String(r.employeeCodigo).trim();
+          if (deletedReceiptsRef.current.has(r.id) || deletedEmployeesRef.current.has(empCode)) return false;
+          if (empCode === '6' && !r.importadoManualmente) return false;
+          return true;
+        });
+
+        setReceipts(prev => {
+          const map = new Map<string, PayReceipt>();
+          prev.forEach(r => {
+            const empCode = String(r.employeeCodigo).trim();
+            if (
+              !deletedReceiptsRef.current.has(r.id) &&
+              !deletedEmployeesRef.current.has(empCode) &&
+              !(empCode === '6' && !r.importadoManualmente) &&
+              isReceiptMathematicallyValid(r)
+            ) {
+              map.set(r.id, r);
+            }
+          });
+          validRemote.forEach(r => {
+            if (isReceiptMathematicallyValid(r)) {
+              map.set(r.id, r);
+            }
+          });
+          const remoteIds = new Set(validRemote.map(r => r.id));
+          map.forEach((rec, id) => {
+            if (!remoteIds.has(id) && !deletedReceiptsRef.current.has(id)) {
+              saveReceiptFirestore(rec).catch(() => {});
+            }
+          });
+          const merged = Array.from(map.values());
+          try {
+            localStorage.setItem(STORAGE_KEY_RECEIPTS, JSON.stringify(merged));
+          } catch (e) {}
+          fetch('/api/receipts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ receipts: merged })
+          }).catch(() => {});
+          return merged;
+        });
       }
     });
 
@@ -896,8 +964,11 @@ export default function App() {
   };
 
   const handleCommitParsedData = async (newOrUpdatedEmployees: Employee[], newReceipts: PayReceipt[]) => {
-    let finalEmployees: Employee[] = [];
-    let finalReceipts: PayReceipt[] = [];
+    const stampedReceipts: PayReceipt[] = newReceipts.map(r => ({
+      ...r,
+      employeeCodigo: String(r.employeeCodigo).trim(),
+      importadoManualmente: true
+    }));
 
     // Un-tombstone any re-imported employees or receipts and register in verified refs
     newOrUpdatedEmployees.forEach(emp => {
@@ -907,15 +978,12 @@ export default function App() {
       deletedUsersRef.current.delete(`user-colab-${code}`);
       verifiedEmployeesMapRef.current.set(code, { ...emp, codigo: code });
     });
-    newReceipts.forEach(rec => {
+    stampedReceipts.forEach(rec => {
       deletedReceiptsRef.current.delete(rec.id);
-      verifiedReceiptsMapRef.current.set(rec.id, rec);
     });
-    saveTombstoneSet(STORAGE_KEY_DELETED_EMPLOYEES, deletedEmployeesRef.current);
-    saveTombstoneSet(STORAGE_KEY_DELETED_USERS, deletedUsersRef.current);
-    saveTombstoneSet(STORAGE_KEY_DELETED_RECEIPTS, deletedReceiptsRef.current);
+    syncServerTombstones();
 
-    // Merge employees by codigo
+    // Merge employees by codigo and persist to localStorage + server disk immediately
     setEmployees(prev => {
       const map = new Map<string, Employee>();
       prev.forEach(emp => map.set(String(emp.codigo).trim(), emp));
@@ -923,60 +991,49 @@ export default function App() {
         const code = String(emp.codigo).trim();
         map.set(code, { ...emp, codigo: code });
       });
-      finalEmployees = Array.from(map.values());
+      const finalEmployees = Array.from(map.values());
       try {
         localStorage.setItem(STORAGE_KEY_EMPLOYEES, JSON.stringify(finalEmployees));
       } catch (e) {}
+      fetch('/api/employees', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employees: finalEmployees })
+      }).catch(() => {});
       return finalEmployees;
     });
 
-    // Merge receipts by id
+    // Merge receipts by id and persist to localStorage + server disk immediately
     setReceipts(prev => {
       const map = new Map<string, PayReceipt>();
       prev.forEach(r => map.set(r.id, r));
-      newReceipts.forEach(r => map.set(r.id, r));
-      finalReceipts = Array.from(map.values());
+      stampedReceipts.forEach(r => map.set(r.id, r));
+      const finalReceipts = Array.from(map.values());
       try {
         localStorage.setItem(STORAGE_KEY_RECEIPTS, JSON.stringify(finalReceipts));
       } catch (e) {}
+      fetch('/api/receipts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ receipts: finalReceipts })
+      }).catch(() => {});
       return finalReceipts;
     });
 
-    // Persist each in Firestore
-    for (const emp of newOrUpdatedEmployees) {
-      saveEmployeeFirestore(emp).catch(() => {});
-    }
-    for (const rec of newReceipts) {
-      saveReceiptFirestore(rec).catch(() => {});
-    }
-
-    // Also persist to server disk (VPS backup)
-    setTimeout(() => {
-      if (finalEmployees.length > 0) {
-        fetch('/api/employees', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ employees: finalEmployees })
-        }).catch(() => {});
-      }
-      if (finalReceipts.length > 0) {
-        fetch('/api/receipts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ receipts: finalReceipts })
-        }).catch(() => {});
-      }
-    }, 100);
+    // Persist in Firestore using atomic batches
+    saveEmployeesBatchFirestore(newOrUpdatedEmployees).catch(() => {});
+    saveReceiptsBatchFirestore(stampedReceipts).catch(() => {});
 
     // Cadastro automático dos colaboradores importados em Usuários vinculando nome e matrícula
-    const usersToPersist: UserAccount[] = [];
     setUsers(prevUsers => {
       const updatedList = [...prevUsers];
+      const usersToPersist: UserAccount[] = [];
       newOrUpdatedEmployees.forEach(emp => {
+        const cleanCode = String(emp.codigo).trim();
         const existingIdx = updatedList.findIndex(
           u =>
             u.role === 'COLABORADOR' &&
-            (u.employeeCodigo === emp.codigo ||
+            (String(u.employeeCodigo || '').trim() === cleanCode ||
               (u.nome && u.nome.trim().toLowerCase() === emp.nome.trim().toLowerCase()))
         );
 
@@ -985,7 +1042,7 @@ export default function App() {
           const linkedUser: UserAccount = {
             ...existing,
             nome: emp.nome,
-            employeeCodigo: emp.codigo,
+            employeeCodigo: cleanCode,
             role: 'COLABORADOR',
             email: existing.email || emp.email || '',
             exigirCompletarCadastro: existing.exigirCompletarCadastro !== undefined ? existing.exigirCompletarCadastro : true,
@@ -996,9 +1053,9 @@ export default function App() {
         } else {
           // Cria o registro do usuário
           const newUser: UserAccount = {
-            uid: `user-${emp.codigo}`,
+            uid: `user-${cleanCode}`,
             nome: emp.nome,
-            employeeCodigo: emp.codigo,
+            employeeCodigo: cleanCode,
             email: emp.email || '',
             senha: '', // O gestor definirá o e-mail e a senha inicial
             role: 'COLABORADOR',
@@ -1024,11 +1081,10 @@ export default function App() {
         body: JSON.stringify({ users: updatedList })
       }).catch(() => {});
 
+      saveUsersBatchFirestore(usersToPersist).catch(() => {});
+
       return updatedList;
     });
-
-    // Salva em lote no Firestore
-    saveUsersBatchFirestore(usersToPersist).catch(() => {});
 
     showToast(`${newReceipts.length} recibos importados. ${newOrUpdatedEmployees.length} colaboradores vinculados aos Usuários!`);
   };
@@ -1118,12 +1174,25 @@ export default function App() {
   };
 
   const handleClearProductionData = async () => {
+    receipts.forEach(r => deletedReceiptsRef.current.add(r.id));
+    employees.forEach(e => deletedEmployeesRef.current.add(String(e.codigo).trim()));
+    syncServerTombstones();
     setEmployees([]);
     setReceipts([]);
     localStorage.removeItem(STORAGE_KEY_EMPLOYEES);
     localStorage.removeItem(STORAGE_KEY_RECEIPTS);
+    fetch('/api/employees', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ employees: [] })
+    }).catch(() => {});
+    fetch('/api/receipts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ receipts: [] })
+    }).catch(() => {});
     await clearAllDatabaseData();
-    showToast('Dados de teste apagados! O sistema está limpo para produção.');
+    showToast('Dados apagados! O sistema está limpo.');
   };
 
   const handleConfirmEmailSend = async (employeeCodigo: string, receiptId: string, email: string) => {
@@ -1426,11 +1495,18 @@ export default function App() {
 
   // Exclusão individual de holerite
   const handleDeleteReceipt = async (receipt: PayReceipt, employee?: Employee) => {
+    const cleanCode = String(receipt.employeeCodigo).trim();
+    const matchingReceipts = receipts.filter(
+      r => r.id === receipt.id || (String(r.employeeCodigo).trim() === cleanCode && r.mesAno === receipt.mesAno)
+    );
+    matchingReceipts.forEach(r => deletedReceiptsRef.current.add(r.id));
     deletedReceiptsRef.current.add(receipt.id);
-    saveTombstoneSet(STORAGE_KEY_DELETED_RECEIPTS, deletedReceiptsRef.current);
+    syncServerTombstones();
 
     setReceipts(prev => {
-      const filtered = prev.filter(r => r.id !== receipt.id);
+      const filtered = prev.filter(
+        r => r.id !== receipt.id && !(String(r.employeeCodigo).trim() === cleanCode && r.mesAno === receipt.mesAno)
+      );
       try { localStorage.setItem(STORAGE_KEY_RECEIPTS, JSON.stringify(filtered)); } catch (e) {}
       fetch('/api/receipts', {
         method: 'POST',
@@ -1441,7 +1517,7 @@ export default function App() {
     });
 
     try {
-      await deleteReceiptFirestore(receipt.id);
+      await deleteReceiptFirestore(receipt.id, cleanCode, receipt.competencia);
     } catch (e) {
       console.warn('Erro ao excluir holerite no Firestore:', e);
     }
@@ -1460,7 +1536,7 @@ export default function App() {
     }
 
     toDelete.forEach(r => deletedReceiptsRef.current.add(r.id));
-    saveTombstoneSet(STORAGE_KEY_DELETED_RECEIPTS, deletedReceiptsRef.current);
+    syncServerTombstones();
 
     setReceipts(prev => {
       const filtered = prev.filter(r => r.mesAno !== mesAno);
@@ -1495,7 +1571,7 @@ export default function App() {
     }
 
     toDelete.forEach(r => deletedReceiptsRef.current.add(r.id));
-    saveTombstoneSet(STORAGE_KEY_DELETED_RECEIPTS, deletedReceiptsRef.current);
+    syncServerTombstones();
 
     setReceipts(prev => {
       const filtered = prev.filter(
@@ -1633,7 +1709,7 @@ export default function App() {
     matchedUsers.forEach(u => {
       if (u.uid) deletedUsersRef.current.add(u.uid);
     });
-    saveTombstoneSet(STORAGE_KEY_DELETED_USERS, deletedUsersRef.current);
+    syncServerTombstones();
 
     setUsers(prev => {
       const filtered = prev.filter(

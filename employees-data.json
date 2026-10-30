@@ -890,5 +890,35 @@
       "tipoConta": "CORRENTE"
     },
     "cadastroCompleto": false
+  },
+  {
+    "codigo": "80",
+    "nome": "MAURO ANTONIO DACOL",
+    "cbo": "411025",
+    "cargo": "AUXILIAR DE CARTORIO",
+    "departamento": "1",
+    "filial": "1",
+    "dataAdmissao": "14/12/2023",
+    "salarioBase": 2537.08,
+    "cpf": "",
+    "email": "",
+    "telefone": "",
+    "status": "ATIVO",
+    "endereco": {
+      "logradouro": "",
+      "numero": "",
+      "bairro": "",
+      "cidade": "",
+      "uf": "",
+      "cep": ""
+    },
+    "contatosFamiliares": [],
+    "dadosBancarios": {
+      "banco": "",
+      "agencia": "",
+      "conta": "",
+      "tipoConta": "CORRENTE"
+    },
+    "cadastroCompleto": false
   }
 ]
