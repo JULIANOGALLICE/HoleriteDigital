@@ -381,6 +381,51 @@ export async function saveSystemConfigFirestore(config: SystemConfig): Promise<v
   }
 }
 
+export interface TombstonesPayload {
+  deletedEmployees: string[];
+  deletedReceipts: string[];
+  deletedUsers: string[];
+  deletedIrpf: string[];
+  updatedAt?: string;
+}
+
+export function subscribeTombstones(callback: (tombstones: TombstonesPayload) => void) {
+  if (isFirestoreQuotaExceeded()) return () => {};
+  return onSnapshot(
+    doc(db, 'systemConfig', 'tombstones'),
+    (snap) => {
+      if (snap.exists()) {
+        const data = snap.data() as Partial<TombstonesPayload>;
+        callback({
+          deletedEmployees: Array.isArray(data.deletedEmployees) ? data.deletedEmployees.map(String) : [],
+          deletedReceipts: Array.isArray(data.deletedReceipts) ? data.deletedReceipts.map(String) : [],
+          deletedUsers: Array.isArray(data.deletedUsers) ? data.deletedUsers.map(String) : [],
+          deletedIrpf: Array.isArray(data.deletedIrpf) ? data.deletedIrpf.map(String) : [],
+          updatedAt: data.updatedAt
+        });
+      }
+    },
+    (err) => {
+      handleWriteCatch(err);
+    }
+  );
+}
+
+export async function saveTombstonesFirestore(tombstones: TombstonesPayload): Promise<void> {
+  if (isFirestoreQuotaExceeded()) return;
+  try {
+    await setDoc(
+      doc(db, 'systemConfig', 'tombstones'),
+      cleanUndefined({
+        ...tombstones,
+        updatedAt: new Date().toISOString()
+      })
+    );
+  } catch (error) {
+    handleWriteCatch(error);
+  }
+}
+
 // 4. Digital Signature Verification Codes (2FA OTP)
 export async function createSignatureVerificationCode(
   receiptId: string,
