@@ -75,7 +75,10 @@ export const DEFAULT_CONFIG: SystemConfig = {
   certificadoA1: getDefaultA1Certificate(),
   exigirCompletarCadastroPrimeiroAcesso: true,
   exigir2FALogin: false,
-  canal2FALogin: 'WHATSAPP'
+  canal2FALogin: 'WHATSAPP',
+  geminiApiKey: '',
+  aiModel: 'gemini-3.8-flash',
+  aiEnabled: true
 };
 
 // 1. Employees
@@ -360,7 +363,7 @@ export function subscribeSystemConfig(callback: (config: SystemConfig) => void) 
 export async function saveSystemConfigFirestore(config: SystemConfig): Promise<void> {
   const path = 'systemConfig/default';
   try {
-    await setDoc(doc(db, 'systemConfig', 'default'), config, { merge: true });
+    await setDoc(doc(db, 'systemConfig', 'default'), cleanUndefined(config), { merge: true });
   } catch (error) {
     console.warn('saveSystemConfigFirestore notice:', error);
   }

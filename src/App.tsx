@@ -221,7 +221,7 @@ export default function App() {
   const [isProcessorOpen, setIsProcessorOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<
-    'CERTIFICADO_A1' | 'EMPRESA' | 'EMAIL_SERVER' | 'ASSINATURA' | 'COMUNICACAO' | 'PLANILHA_USUARIOS' | 'DADOS'
+    'CERTIFICADO_A1' | 'IA_CONFIG' | 'EMPRESA' | 'EMAIL_SERVER' | 'ASSINATURA' | 'COMUNICACAO' | 'PLANILHA_USUARIOS' | 'DADOS'
   >('CERTIFICADO_A1');
   const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [isUserManagementOpen, setIsUserManagementOpen] = useState(false);
@@ -608,11 +608,21 @@ export default function App() {
           smtpPort: hasCustomLocalHost && isRemoteDefaultGmail ? prev.smtpPort : (remoteConfig.smtpPort || prev.smtpPort),
           smtpSecure: hasCustomLocalHost && isRemoteDefaultGmail ? prev.smtpSecure : (remoteConfig.smtpSecure ?? prev.smtpSecure),
           emailProvider: hasCustomLocalHost && isRemoteDefaultGmail ? prev.emailProvider : (remoteConfig.emailProvider || prev.emailProvider),
+          geminiApiKey: remoteConfig.geminiApiKey || prev.geminiApiKey || '',
+          aiModel: remoteConfig.aiModel || prev.aiModel || 'gemini-3.8-flash',
+          aiEnabled: remoteConfig.aiEnabled !== undefined ? remoteConfig.aiEnabled : (prev.aiEnabled ?? true),
           certificadoA1: activeCert
         };
         try {
           localStorage.setItem('holerite_system_config', JSON.stringify(mergedConfig));
         } catch (e) {}
+        if (mergedConfig.geminiApiKey) {
+          fetch('/api/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(mergedConfig)
+          }).catch(() => {});
+        }
         return mergedConfig;
       });
     });
@@ -1785,7 +1795,7 @@ export default function App() {
     showToast('Sessão encerrada. Até logo!');
   };
 
-  const handleOpenSettingsWithTab = (tab?: 'CERTIFICADO_A1' | 'EMPRESA' | 'EMAIL_SERVER' | 'ASSINATURA' | 'COMUNICACAO' | 'PLANILHA_USUARIOS' | 'DADOS') => {
+  const handleOpenSettingsWithTab = (tab?: 'CERTIFICADO_A1' | 'IA_CONFIG' | 'EMPRESA' | 'EMAIL_SERVER' | 'ASSINATURA' | 'COMUNICACAO' | 'PLANILHA_USUARIOS' | 'DADOS') => {
     setSettingsInitialTab(tab || 'CERTIFICADO_A1');
     setIsSettingsOpen(true);
   };
@@ -1931,6 +1941,11 @@ export default function App() {
         onClose={() => setIsProcessorOpen(false)}
         existingEmployees={employees}
         onCommitParsedData={handleCommitParsedData}
+        systemConfig={systemConfig}
+        onOpenAiSettings={() => {
+          setIsProcessorOpen(false);
+          handleOpenSettingsWithTab('IA_CONFIG');
+        }}
       />
 
       {editingEmployee && (

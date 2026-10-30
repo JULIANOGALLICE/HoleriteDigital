@@ -263,12 +263,114 @@ app.post('/api/tombstones', (req, res) => {
   return res.json({ success: true, tombstones: updated });
 });
 
-// 0. API: Get & Save System Configuration (Permanent Server-Side Storage)
-app.get('/api/config', (_req, res) => {
+function readServerConfig(): Record<string, any> {
   try {
     if (fs.existsSync(CONFIG_FILE)) {
       const content = fs.readFileSync(CONFIG_FILE, 'utf-8');
-      const data = JSON.parse(content);
+      const parsed = JSON.parse(content);
+      if (parsed && typeof parsed === 'object') return parsed;
+    }
+  } catch (err: any) {
+    console.error('Error reading system-config.json:', err);
+  }
+  return {};
+}
+
+function writeServerConfig(configUpdate: Record<string, any>): Record<string, any> {
+  const existing = readServerConfig();
+  const merged = {
+    ...existing,
+    ...configUpdate,
+    // Preserve saved geminiApiKey if the incoming update omitted it (undefined), while allowing explicit empty string if cleared
+    geminiApiKey:
+      configUpdate.geminiApiKey !== undefined
+        ? String(configUpdate.geminiApiKey).trim()
+        : existing.geminiApiKey || '',
+    aiModel:
+      configUpdate.aiModel !== undefined
+        ? String(configUpdate.aiModel).trim() || 'gemini-3.8-flash'
+        : existing.aiModel || 'gemini-3.8-flash',
+    aiEnabled:
+      configUpdate.aiEnabled !== undefined
+        ? Boolean(configUpdate.aiEnabled)
+        : existing.aiEnabled !== undefined
+        ? Boolean(existing.aiEnabled)
+        : true
+  };
+  fs.writeFileSync(CONFIG_FILE, JSON.stringify(merged, null, 2), 'utf-8');
+  return merged;
+}
+
+function maskApiKey(key?: string): string {
+  const clean = (key || '').trim();
+  if (!clean) return '';
+  if (clean.length <= 8) return '••••••••';
+  return `${clean.slice(0, 6)}••••••••${clean.slice(-4)}`;
+}
+
+function resolveGeminiCredentials(overrideApiKey?: string, overrideModel?: string) {
+  const savedConfig = readServerConfig();
+  const reqKey = typeof overrideApiKey === 'string' ? overrideApiKey.trim() : '';
+  const dbKey = typeof savedConfig.geminiApiKey === 'string' ? savedConfig.geminiApiKey.trim() : '';
+  const envKey = typeof process.env.GEMINI_API_KEY === 'string' ? process.env.GEMINI_API_KEY.trim() : '';
+
+  // Persist request key to server config if provided and not yet saved
+  if (reqKey && reqKey !== dbKey) {
+    try {
+      writeServerConfig({
+        geminiApiKey: reqKey,
+        ...(overrideModel ? { aiModel: overrideModel.trim() } : {})
+      });
+    } catch (e) {}
+  }
+
+  const apiKey = reqKey || dbKey || envKey;
+  const keySource: 'request' | 'database' | 'env' | 'none' = reqKey
+    ? 'request'
+    : dbKey
+    ? 'database'
+    : envKey
+    ? 'env'
+    : 'none';
+
+  const preferredModel = (
+    (typeof overrideModel === 'string' && overrideModel.trim()) ||
+    (typeof savedConfig.aiModel === 'string' && savedConfig.aiModel.trim()) ||
+    'gemini-3.8-flash'
+  ).trim();
+
+  const models = Array.from(
+    new Set([preferredModel, 'gemini-3.8-flash', 'gemini-3-flash-preview', 'gemini-2.5-flash'])
+  );
+
+  const client = apiKey
+    ? new GoogleGenAI({
+        apiKey,
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build'
+          }
+        }
+      })
+    : null;
+
+  return {
+    apiKey,
+    hasKey: Boolean(apiKey),
+    keySource,
+    maskedKey: maskApiKey(apiKey),
+    preferredModel,
+    models,
+    aiEnabled: savedConfig.aiEnabled !== false,
+    client
+  };
+}
+
+// 0. API: Get & Save System Configuration (Permanent Server-Side Storage)
+app.get('/api/config', (_req, res) => {
+  try {
+    const data = readServerConfig();
+    if (Object.keys(data).length > 0) {
       return res.json({ success: true, config: data });
     }
   } catch (err: any) {
@@ -281,13 +383,101 @@ app.post('/api/config', (req, res) => {
   try {
     const config = req.body;
     if (config && typeof config === 'object') {
-      fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
-      return res.json({ success: true, message: 'Configurações gravadas com sucesso no servidor.' });
+      const saved = writeServerConfig(config);
+      return res.json({
+        success: true,
+        message: 'Configurações gravadas com sucesso no servidor.',
+        config: saved
+      });
     }
     return res.status(400).json({ success: false, message: 'Objeto de configuração inválido.' });
   } catch (err: any) {
     console.error('Error writing system-config.json:', err);
     return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// API: Status e Teste de Conexão da IA (Google Gemini) para VPS
+app.get('/api/ai/status', (_req, res) => {
+  const creds = resolveGeminiCredentials();
+  return res.json({
+    success: true,
+    configured: creds.hasKey,
+    keySource: creds.keySource,
+    maskedKey: creds.maskedKey,
+    model: creds.preferredModel,
+    aiEnabled: creds.aiEnabled
+  });
+});
+
+app.post('/api/ai/test', async (req, res) => {
+  const startTime = Date.now();
+  try {
+    const { geminiApiKey, aiModel, saveToServer } = req.body || {};
+    const creds = resolveGeminiCredentials(geminiApiKey, aiModel);
+
+    if (!creds.hasKey || !creds.client) {
+      return res.status(400).json({
+        success: false,
+        code: 'MISSING_API_KEY',
+        message: 'Nenhuma Chave de API do Google Gemini foi informada ou encontrada no servidor. Cole sua chave AIza... e clique em Salvar.'
+      });
+    }
+
+    if (saveToServer && geminiApiKey) {
+      writeServerConfig({
+        geminiApiKey: String(geminiApiKey).trim(),
+        aiModel: creds.preferredModel
+      });
+    }
+
+    let modelUsed = '';
+    let lastError = '';
+
+    for (const model of creds.models) {
+      try {
+        const response = await creds.client.models.generateContent({
+          model,
+          contents: [
+            {
+              text: 'Responda estritamente com o JSON: {"status":"ok","engine":"Google Gemini","ready":true}'
+            }
+          ],
+          config: { responseMimeType: 'application/json' }
+        });
+        if (response && response.text) {
+          modelUsed = model;
+          break;
+        }
+      } catch (err: any) {
+        lastError = err?.message || String(err);
+      }
+    }
+
+    const durationMs = Date.now() - startTime;
+
+    if (!modelUsed) {
+      return res.status(400).json({
+        success: false,
+        code: 'AI_CONNECTION_FAILED',
+        message: `Falha ao autenticar no Google Gemini: ${lastError || 'Chave de API inválida ou sem permissão.'}`,
+        durationMs
+      });
+    }
+
+    return res.json({
+      success: true,
+      modelUsed,
+      durationMs,
+      maskedKey: creds.maskedKey,
+      keySource: creds.keySource,
+      message: `Conexão com Google Gemini (${modelUsed}) validada com sucesso em ${durationMs}ms!`
+    });
+  } catch (err: any) {
+    return res.status(500).json({
+      success: false,
+      message: `Erro ao testar conexão com a IA: ${err?.message || 'Erro desconhecido'}`
+    });
   }
 });
 
@@ -552,13 +742,24 @@ app.post('/api/extract-pdf-text', async (req, res) => {
 
 // API: Processamento Inteligente de Folha com IA (Google Gemini) + Auditoria Matemática 100%
 app.post('/api/ai/parse-payroll', async (req, res) => {
+  const startTime = Date.now();
   try {
-    const { base64, text: providedText } = req.body;
+    const { base64, text: providedText, geminiApiKey, aiModel } = req.body || {};
 
     if (!base64 && !providedText) {
       return res.status(400).json({
         success: false,
         message: 'Arquivo PDF ou texto da folha não fornecido.'
+      });
+    }
+
+    const creds = resolveGeminiCredentials(geminiApiKey, aiModel);
+    if (!creds.hasKey || !creds.client) {
+      return res.status(400).json({
+        success: false,
+        code: 'MISSING_API_KEY',
+        message:
+          'Chave da API do Google Gemini não configurada no servidor/VPS. Acesse Configurações do Sistema > Inteligência Artificial (IA) e salve sua Chave da API.'
       });
     }
 
@@ -601,52 +802,89 @@ app.post('/api/ai/parse-payroll', async (req, res) => {
     };
 
     const allLocalExact = localRecords.length > 0 && localRecords.every(isRecordMathematicallyExact);
-
-    // 2. Consulta o modelo oficial Gemini (gemini-3-flash-preview) para auditoria contábil ou extração complementar
-    const models = ['gemini-3-flash-preview', 'gemini-2.5-flash'];
+    const models = creds.models;
 
     if (allLocalExact) {
-      // Executa auditoria semântica com o Gemini sobre os registros extraídos para validar cargos, nomes e integridade contábil
-      try {
-        const auditSummary = localRecords.map(r => ({
-          codigo: r.employee.codigo,
-          nome: r.employee.nome,
-          cargo: r.employee.cargo,
-          cbo: r.employee.cbo,
-          dataAdmissao: r.employee.dataAdmissao,
-          salarioBase: r.receipt.salarioBase,
-          totalVencimentos: r.receipt.totalVencimentos,
-          totalDescontos: r.receipt.totalDescontos,
-          valorLiquido: r.receipt.valorLiquido,
-          qtdRubricas: r.receipt.itens.length
-        }));
+      // Executa auditoria semântica e contábil real com o Gemini sobre os registros extraídos
+      let aiModelUsed = '';
+      let lastAiError = '';
 
-        const auditPrompt = `Você é um auditor contábil sênior. Revise o resumo abaixo extraído de ${localRecords.length} holerites do documento oficial da folha de pagamento e confirme se há alguma correção ortográfica de cargo necesaria (mantendo os nomes oficiais em MAIÚSCULAS).
-Retorne um JSON no formato: { "verified": true, "checkedCount": ${localRecords.length}, "corrections": [] }
-Resumo auditado:
+      const auditSummary = localRecords.map(r => ({
+        codigo: r.employee.codigo,
+        nome: r.employee.nome,
+        cargo: r.employee.cargo,
+        cbo: r.employee.cbo,
+        dataAdmissao: r.employee.dataAdmissao,
+        salarioBase: r.receipt.salarioBase,
+        totalVencimentos: r.receipt.totalVencimentos,
+        totalDescontos: r.receipt.totalDescontos,
+        valorLiquido: r.receipt.valorLiquido,
+        qtdRubricas: r.receipt.itens.length
+      }));
+
+      const auditPrompt = `Você é um auditor contábil sênior especializado em folha de pagamento. Revise os ${localRecords.length} holerites extraídos do documento oficial abaixo e verifique a integridade cadastral (código, nome em MAIÚSCULAS, cargo, CBO, data de admissão) e contábil.
+Retorne estritamente um JSON no formato:
+{
+  "verified": true,
+  "checkedCount": ${localRecords.length},
+  "corrections": [
+    { "codigo": "string", "nome": "NOME CORRIGIDO", "cargo": "CARGO CORRIGIDO", "cbo": "CBO CORRIGIDO" }
+  ]
+}
+Se todos os nomes e cargos já estiverem corretos, retorne "corrections": [].
+Resumo dos holerites extraídos:
 ${JSON.stringify(auditSummary)}`;
 
-        for (const model of models) {
-          try {
-            await ai.models.generateContent({
-              model,
-              contents: [{ text: auditPrompt }],
-              config: { responseMimeType: 'application/json' }
-            });
+      for (const model of models) {
+        try {
+          const response = await creds.client.models.generateContent({
+            model,
+            contents: [{ text: auditPrompt }],
+            config: { responseMimeType: 'application/json' }
+          });
+          if (response && response.text) {
+            aiModelUsed = model;
+            try {
+              const parsedAudit = JSON.parse(response.text);
+              if (Array.isArray(parsedAudit?.corrections) && parsedAudit.corrections.length > 0) {
+                for (const corr of parsedAudit.corrections) {
+                  const targetCode = String(corr?.codigo || '').trim();
+                  const targetRec = localRecords.find(r => String(r.employee.codigo).trim() === targetCode);
+                  if (targetRec) {
+                    if (corr.nome && String(corr.nome).trim().length > 3) {
+                      targetRec.employee.nome = String(corr.nome).trim().toUpperCase();
+                    }
+                    if (corr.cargo && String(corr.cargo).trim().length > 2) {
+                      targetRec.employee.cargo = String(corr.cargo).trim().toUpperCase();
+                    }
+                  }
+                }
+              }
+            } catch (parseErr) {}
             break;
-          } catch (e) {
-            // Prossegue para o próximo modelo se necessário
           }
+        } catch (e: any) {
+          lastAiError = e?.message || String(e);
+          console.warn(`Gemini audit model ${model} failed:`, lastAiError);
         }
-      } catch (auditErr) {
-        console.warn('Aviso na auditoria complementar Gemini:', auditErr);
       }
 
+      if (!aiModelUsed) {
+        return res.status(400).json({
+          success: false,
+          code: 'AI_AUTH_ERROR',
+          message: `Falha ao executar a IA Google Gemini na VPS: ${lastAiError || 'Verifique se a Chave da API está correta nas Configurações do Sistema.'}`
+        });
+      }
+
+      const aiDurationMs = Date.now() - startTime;
       return res.json({
         success: true,
         records: localRecords,
         count: localRecords.length,
-        engine: 'gemini'
+        engine: 'gemini',
+        aiModelUsed,
+        aiDurationMs
       });
     }
 
@@ -703,6 +941,8 @@ Documento a ser analisado:
 ${extractedText}`;
 
     let rawList: any[] = [];
+    let aiModelUsed = '';
+    let lastAiError = '';
     try {
       const contents: any[] = [];
       if (!extractedText || extractedText.length < 150) {
@@ -720,7 +960,7 @@ ${extractedText}`;
       let rawJson = '';
       for (const model of models) {
         try {
-          const response = await ai.models.generateContent({
+          const response = await creds.client.models.generateContent({
             model,
             contents,
             config: {
@@ -729,10 +969,12 @@ ${extractedText}`;
           });
           if (response && response.text) {
             rawJson = response.text;
+            aiModelUsed = model;
             break;
           }
         } catch (err: any) {
-          console.warn(`Model ${model} failed:`, err?.message || err);
+          lastAiError = err?.message || String(err);
+          console.warn(`Model ${model} failed:`, lastAiError);
         }
       }
 
@@ -747,16 +989,34 @@ ${extractedText}`;
           rawList = aiList;
         }
       }
-    } catch (aiErr) {
+    } catch (aiErr: any) {
+      lastAiError = aiErr?.message || String(aiErr);
       console.warn('Erro ao chamar IA, utilizando leitor de precisão:', aiErr);
     }
 
+    if (!aiModelUsed && localRecords.length === 0) {
+      return res.status(400).json({
+        success: false,
+        code: 'AI_AUTH_ERROR',
+        message: `Falha ao executar a IA Google Gemini na VPS: ${lastAiError || 'Verifique a Chave da API nas Configurações do Sistema.'}`
+      });
+    }
+
     if (rawList.length < localRecords.length && localRecords.length > 0) {
+      if (!aiModelUsed) {
+        return res.status(400).json({
+          success: false,
+          code: 'AI_AUTH_ERROR',
+          message: `Falha ao conectar à IA Google Gemini na VPS: ${lastAiError || 'Verifique a Chave da API nas Configurações do Sistema.'}`
+        });
+      }
       return res.json({
         success: true,
         records: localRecords,
         count: localRecords.length,
-        engine: 'gemini'
+        engine: 'gemini',
+        aiModelUsed,
+        aiDurationMs: Date.now() - startTime
       });
     }
 
@@ -882,7 +1142,9 @@ ${extractedText}`;
       success: true,
       records: formattedRecords,
       count: formattedRecords.length,
-      engine: 'gemini'
+      engine: 'gemini',
+      aiModelUsed: aiModelUsed || creds.preferredModel,
+      aiDurationMs: Date.now() - startTime
     });
   } catch (err: any) {
     console.error('Error in /api/ai/parse-payroll:', err);
@@ -902,7 +1164,8 @@ if (!fs.existsSync(IRPF_DIR)) {
 // API: Processamento e Divisão de Comprovantes de Rendimentos (IRPF) por Usuário
 app.post('/api/ai/parse-income-report', async (req, res) => {
   try {
-    const { base64, text: providedText, employees: employeeList = [], useAi = true } = req.body;
+    const { base64, text: providedText, employees: employeeList = [], useAi = true, geminiApiKey, aiModel } = req.body;
+    const creds = resolveGeminiCredentials(geminiApiKey, aiModel);
 
     if (!base64 && !providedText) {
       return res.status(400).json({
@@ -1050,11 +1313,19 @@ Retorne ESTRITAMENTE um objeto JSON:
 Texto da página:
 ${pageText}`;
 
-              const aiRes = await ai.models.generateContent({
-                model: 'gemini-3.1-flash-lite',
-                contents: [{ text: aiPrompt }],
-                config: { responseMimeType: 'application/json' }
-              });
+              let aiRes: any = null;
+              if (creds.client) {
+                for (const m of creds.models) {
+                  try {
+                    aiRes = await creds.client.models.generateContent({
+                      model: m,
+                      contents: [{ text: aiPrompt }],
+                      config: { responseMimeType: 'application/json' }
+                    });
+                    if (aiRes && aiRes.text) break;
+                  } catch (e) {}
+                }
+              }
 
               if (aiRes && aiRes.text) {
                 const aiData = JSON.parse(aiRes.text);

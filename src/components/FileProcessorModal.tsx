@@ -3,7 +3,7 @@ import { parsePayrollText, ParsedRecord } from '../utils/pdfParser';
 import { extractPdfText } from '../utils/pdfExtractor';
 import { SAMPLE_RAW_OCR } from '../data/sampleRawOCR';
 import { formatBRL } from '../utils/pdfGenerator';
-import { Employee, PayReceipt } from '../types';
+import { Employee, PayReceipt, SystemConfig } from '../types';
 import {
   UploadCloud,
   FileText,
@@ -19,7 +19,8 @@ import {
   FileCheck,
   Bot,
   Zap,
-  Info
+  Info,
+  Settings
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -28,25 +29,37 @@ interface FileProcessorModalProps {
   onClose: () => void;
   existingEmployees: Employee[];
   onCommitParsedData: (newEmployees: Employee[], newReceipts: PayReceipt[]) => void;
+  systemConfig?: SystemConfig;
+  onOpenAiSettings?: () => void;
 }
 
 export const FileProcessorModal: React.FC<FileProcessorModalProps> = ({
   isOpen,
   onClose,
   existingEmployees,
-  onCommitParsedData
+  onCommitParsedData,
+  systemConfig,
+  onOpenAiSettings
 }) => {
   const [inputText, setInputText] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [progressStatus, setProgressStatus] = useState<string>('Processando...');
-  const [useAi, setUseAi] = useState<boolean>(true);
+  const [useAi, setUseAi] = useState<boolean>(systemConfig?.aiEnabled !== false);
   const [engineUsed, setEngineUsed] = useState<'gemini' | 'local' | null>(null);
+  const [aiExecutionMeta, setAiExecutionMeta] = useState<{ modelUsed?: string; durationMs?: number } | null>(null);
+  const [aiMissingKeyError, setAiMissingKeyError] = useState<boolean>(false);
   const [parsedRecords, setParsedRecords] = useState<ParsedRecord[]>([]);
   const [parsingErrors, setParsingErrors] = useState<string[]>([]);
   const [fileName, setFileName] = useState<string | null>(null);
   const [rawExtractedText, setRawExtractedText] = useState<string>('');
   const [showRawText, setShowRawText] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+
+  React.useEffect(() => {
+    if (isOpen && systemConfig?.aiEnabled !== undefined) {
+      setUseAi(systemConfig.aiEnabled !== false);
+    }
+  }, [isOpen, systemConfig?.aiEnabled]);
 
   if (!isOpen) return null;
 
@@ -59,16 +72,21 @@ export const FileProcessorModal: React.FC<FileProcessorModalProps> = ({
     });
   };
 
-  const handleProcessTextLocal = (textToParse: string, name = 'Arquivo da Folha.pdf') => {
+  const handleProcessTextLocal = (textToParse: string, name = 'Arquivo da Folha.pdf', keepExistingErrors = false) => {
     setIsProcessing(true);
     setProgressStatus('Processando dados localmente...');
     setFileName(name);
     setRawExtractedText(textToParse);
     setEngineUsed('local');
+    setAiExecutionMeta(null);
     setTimeout(() => {
       const result = parsePayrollText(textToParse);
       setParsedRecords(result.records);
-      setParsingErrors(result.errors);
+      if (!keepExistingErrors) {
+        setParsingErrors(result.errors);
+      } else if (result.errors.length > 0) {
+        setParsingErrors(prev => [...prev, ...result.errors]);
+      }
       setIsProcessing(false);
     }, 200);
   };
@@ -77,13 +95,19 @@ export const FileProcessorModal: React.FC<FileProcessorModalProps> = ({
     setIsProcessing(true);
     setFileName(name);
     setEngineUsed('gemini');
-    setProgressStatus('IA (Google Gemini) analisando todas as páginas do documento...');
+    setAiExecutionMeta(null);
+    setAiMissingKeyError(false);
+    setProgressStatus('IA (Google Gemini) analisando e auditando todas as páginas do documento...');
 
     try {
       const res = await fetch('/api/ai/parse-payroll', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({
+          ...payload,
+          geminiApiKey: systemConfig?.geminiApiKey || '',
+          aiModel: systemConfig?.aiModel || 'gemini-3.8-flash'
+        })
       });
 
       const data = await res.json();
@@ -91,21 +115,30 @@ export const FileProcessorModal: React.FC<FileProcessorModalProps> = ({
       if (data.success && Array.isArray(data.records) && data.records.length > 0) {
         setParsedRecords(data.records);
         setParsingErrors([]);
+        setEngineUsed('gemini');
+        setAiExecutionMeta({
+          modelUsed: data.aiModelUsed || systemConfig?.aiModel || 'gemini-3.8-flash',
+          durationMs: data.aiDurationMs
+        });
         setIsProcessing(false);
         confetti({ particleCount: 80, spread: 60, origin: { y: 0.7 } });
         return;
+      }
+
+      if (data.code === 'MISSING_API_KEY' || data.code === 'AI_AUTH_ERROR') {
+        setAiMissingKeyError(true);
       }
 
       throw new Error(data.message || 'A IA não retornou registros válidos.');
     } catch (err: any) {
       console.warn('Falha no processador IA, acionando fallback local:', err);
       setParsingErrors([
-        `IA encontrou instabilidade temporária (${err?.message || 'erro'}). Executando leitor local de contingência...`
+        `${err?.message || 'IA indisponível no momento'}. Foi utilizado o leitor local de contingência.`
       ]);
 
-      // Fallback para extrator local
+      // Fallback para extrator local mantendo o aviso de erro da IA visível
       if (payload.text) {
-        handleProcessTextLocal(payload.text, name);
+        handleProcessTextLocal(payload.text, name, true);
       } else if (payload.base64) {
         try {
           const res = await fetch('/api/extract-pdf-text', {
@@ -115,7 +148,7 @@ export const FileProcessorModal: React.FC<FileProcessorModalProps> = ({
           });
           const d = await res.json();
           if (d.text) {
-            handleProcessTextLocal(d.text, name);
+            handleProcessTextLocal(d.text, name, true);
             return;
           }
         } catch (e) {}
@@ -134,6 +167,8 @@ export const FileProcessorModal: React.FC<FileProcessorModalProps> = ({
     setRawExtractedText('');
     setShowRawText(false);
     setIsProcessing(false);
+    setAiExecutionMeta(null);
+    setAiMissingKeyError(false);
   };
 
   const handleCloseModal = () => {
@@ -331,9 +366,20 @@ export const FileProcessorModal: React.FC<FileProcessorModalProps> = ({
         <div className="p-6 overflow-y-auto space-y-5 flex-1">
           {/* Mode Selector (AI vs Fast Local) */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <Bot className="w-4 h-4 text-blue-600" />
               <span className="text-xs font-semibold text-slate-800">Motor de Extração:</span>
+              {onOpenAiSettings && (
+                <button
+                  type="button"
+                  onClick={onOpenAiSettings}
+                  className="text-[11px] text-indigo-700 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2 py-0.5 rounded-md font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                  title="Configurar Chave da API do Google Gemini no Banco de Dados / VPS"
+                >
+                  <Settings className="w-3 h-3" />
+                  Configurar Chave IA (VPS)
+                </button>
+              )}
             </div>
             <div className="flex items-center gap-1.5 bg-slate-200/80 p-1 rounded-lg">
               <button
@@ -458,11 +504,15 @@ export const FileProcessorModal: React.FC<FileProcessorModalProps> = ({
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
                   <span className="text-[11px] text-slate-500 block">Total de Holerites</span>
-                  <div className="flex items-center gap-2 mt-0.5">
+                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                     <span className="font-bold text-xl text-slate-900">{parsedRecords.length}</span>
-                    {engineUsed === 'gemini' && (
-                      <span className="text-[10px] font-bold text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded">
-                        IA 100%
+                    {engineUsed === 'gemini' ? (
+                      <span className="text-[10px] font-bold text-blue-700 bg-blue-100 px-1.5 py-0.5 rounded">
+                        IA Gemini {aiExecutionMeta?.durationMs ? `(${(aiExecutionMeta.durationMs / 1000).toFixed(1)}s)` : '100%'}
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded">
+                        Leitor Local
                       </span>
                     )}
                   </div>
@@ -605,16 +655,28 @@ export const FileProcessorModal: React.FC<FileProcessorModalProps> = ({
           )}
 
           {parsingErrors.length > 0 && (
-            <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-800 flex items-start gap-2">
-              <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-              <div>
-                <strong>Avisos durante a leitura:</strong>
-                <ul className="list-disc list-inside mt-1 text-[11px] text-red-700">
-                  {parsingErrors.map((err, i) => (
-                    <li key={i}>{err}</li>
-                  ))}
-                </ul>
+            <div className="bg-red-50 border border-red-200 rounded-xl p-3.5 text-xs text-red-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                <div>
+                  <strong>Avisos durante a leitura:</strong>
+                  <ul className="list-disc list-inside mt-1 text-[11px] text-red-700">
+                    {parsingErrors.map((err, i) => (
+                      <li key={i}>{err}</li>
+                    ))}
+                  </ul>
+                </div>
               </div>
+              {aiMissingKeyError && onOpenAiSettings && (
+                <button
+                  type="button"
+                  onClick={onOpenAiSettings}
+                  className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-sm flex items-center gap-1.5 shrink-0 cursor-pointer transition-colors"
+                >
+                  <Settings className="w-3.5 h-3.5" />
+                  Configurar Chave da API da IA
+                </button>
+              )}
             </div>
           )}
         </div>

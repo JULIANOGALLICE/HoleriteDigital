@@ -58,7 +58,7 @@ interface AdminPortalProps {
   onBatchEmail: (selectedMonth: string) => void;
   onBatchWhatsAppReminder?: (selectedMonth: string) => void;
   onBatchEmailReminder?: (selectedMonth: string) => void;
-  onOpenSettingsModal: (tab?: 'CERTIFICADO_A1' | 'EMPRESA' | 'EMAIL_SERVER' | 'ASSINATURA' | 'COMUNICACAO' | 'PLANILHA_USUARIOS' | 'DADOS') => void;
+  onOpenSettingsModal: (tab?: 'CERTIFICADO_A1' | 'IA_CONFIG' | 'EMPRESA' | 'EMAIL_SERVER' | 'ASSINATURA' | 'COMUNICACAO' | 'PLANILHA_USUARIOS' | 'DADOS') => void;
   onOpenUserManagement?: () => void;
   onOpenMedicalCertificates?: () => void;
   onOpenIncomeReports?: () => void;

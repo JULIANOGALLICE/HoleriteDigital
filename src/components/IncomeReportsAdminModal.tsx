@@ -160,6 +160,8 @@ export const IncomeReportsAdminModal: React.FC<IncomeReportsAdminModalProps> = (
         body: JSON.stringify({
           base64,
           useAi,
+          geminiApiKey: systemConfig?.geminiApiKey || '',
+          aiModel: systemConfig?.aiModel || 'gemini-3.8-flash',
           employees: employees.map(e => ({
             codigo: e.codigo,
             nome: e.nome,

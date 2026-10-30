@@ -36,7 +36,10 @@ import {
   UploadCloud,
   Users,
   Check,
-  ArrowRight
+  ArrowRight,
+  Sparkles,
+  Bot,
+  Cpu
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -65,7 +68,7 @@ interface SystemSettingsModalProps {
   config: SystemConfig;
   onSaveConfig: (updated: SystemConfig) => void;
   onClearProductionData: () => void;
-  initialTab?: 'CERTIFICADO_A1' | 'EMPRESA' | 'EMAIL_SERVER' | 'ASSINATURA' | 'COMUNICACAO' | 'PLANILHA_USUARIOS' | 'DADOS';
+  initialTab?: 'CERTIFICADO_A1' | 'IA_CONFIG' | 'EMPRESA' | 'EMAIL_SERVER' | 'ASSINATURA' | 'COMUNICACAO' | 'PLANILHA_USUARIOS' | 'DADOS';
   employees?: Employee[];
   users?: UserAccount[];
   onBatchUpdateEmployeesAndUsers?: (updatedEmployees: Employee[], updatedUsers: UserAccount[]) => Promise<void> | void;
@@ -101,7 +104,10 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
     evolutionInstance: config.evolutionInstance || '',
     enviarPdfAutomaticoWhatsapp: config.enviarPdfAutomaticoWhatsapp !== undefined ? config.enviarPdfAutomaticoWhatsapp : true,
     exigir2FALogin: config.exigir2FALogin || false,
-    canal2FALogin: config.canal2FALogin || 'WHATSAPP'
+    canal2FALogin: config.canal2FALogin || 'WHATSAPP',
+    geminiApiKey: config.geminiApiKey || '',
+    aiModel: config.aiModel || 'gemini-3.8-flash',
+    aiEnabled: config.aiEnabled !== undefined ? config.aiEnabled : true
   }));
 
   // Synchronize when config or modal visibility changes
@@ -126,19 +132,54 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
         evolutionInstance: config.evolutionInstance || '',
         enviarPdfAutomaticoWhatsapp: config.enviarPdfAutomaticoWhatsapp !== undefined ? config.enviarPdfAutomaticoWhatsapp : true,
         exigir2FALogin: config.exigir2FALogin || false,
-        canal2FALogin: config.canal2FALogin || 'WHATSAPP'
+        canal2FALogin: config.canal2FALogin || 'WHATSAPP',
+        geminiApiKey: config.geminiApiKey || '',
+        aiModel: config.aiModel || 'gemini-3.8-flash',
+        aiEnabled: config.aiEnabled !== undefined ? config.aiEnabled : true
       });
       setActiveTab(initialTab);
       setSpreadsheetAnalysis(null);
       setSpreadsheetError(null);
       setSpreadsheetSuccess(null);
+      setAiTestResult(null);
+
+      // Consulta status da IA no servidor VPS
+      fetch('/api/ai/status')
+        .then(r => r.json())
+        .then(data => {
+          if (data && data.success) {
+            setServerAiStatus({
+              configured: Boolean(data.configured),
+              keySource: data.keySource || 'none',
+              maskedKey: data.maskedKey || '',
+              model: data.model || 'gemini-3.8-flash'
+            });
+          }
+        })
+        .catch(() => {});
     }
   }, [isOpen, config, initialTab]);
 
-  const [activeTab, setActiveTab] = useState<'CERTIFICADO_A1' | 'EMPRESA' | 'EMAIL_SERVER' | 'ASSINATURA' | 'COMUNICACAO' | 'PLANILHA_USUARIOS' | 'DADOS'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'CERTIFICADO_A1' | 'IA_CONFIG' | 'EMPRESA' | 'EMAIL_SERVER' | 'ASSINATURA' | 'COMUNICACAO' | 'PLANILHA_USUARIOS' | 'DADOS'>(initialTab);
   const [isConfirmingClear, setIsConfirmingClear] = useState(false);
   const [isTestingEmail, setIsTestingEmail] = useState(false);
   const [testEmailResult, setTestEmailResult] = useState<EmailTestResult | null>(null);
+
+  // AI (Google Gemini) Configuration & Test State
+  const [showGeminiKey, setShowGeminiKey] = useState(false);
+  const [isTestingAi, setIsTestingAi] = useState(false);
+  const [aiTestResult, setAiTestResult] = useState<{
+    success: boolean;
+    message: string;
+    modelUsed?: string;
+    durationMs?: number;
+  } | null>(null);
+  const [serverAiStatus, setServerAiStatus] = useState<{
+    configured: boolean;
+    keySource: string;
+    maskedKey: string;
+    model: string;
+  } | null>(null);
 
   // Spreadsheet XLS Import/Export State
   const spreadsheetInputRef = useRef<HTMLInputElement>(null);
@@ -214,19 +255,100 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
 
   if (!isOpen) return null;
 
+  const handleTestAiConnection = async () => {
+    setIsTestingAi(true);
+    setAiTestResult(null);
+    try {
+      const res = await fetch('/api/ai/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          geminiApiKey: (formData.geminiApiKey || '').trim(),
+          aiModel: formData.aiModel || 'gemini-3.8-flash',
+          saveToServer: true
+        })
+      });
+      const data = await res.json();
+      setAiTestResult({
+        success: Boolean(data.success),
+        message: data.message || (data.success ? 'Conexão com IA validada!' : 'Falha na conexão com a IA.'),
+        modelUsed: data.modelUsed,
+        durationMs: data.durationMs
+      });
+      if (data.success) {
+        setServerAiStatus({
+          configured: true,
+          keySource: (formData.geminiApiKey || '').trim() ? 'database' : data.keySource || 'env',
+          maskedKey: data.maskedKey || '',
+          model: data.modelUsed || formData.aiModel || 'gemini-3.8-flash'
+        });
+        confetti({ particleCount: 55, spread: 50, origin: { y: 0.6 } });
+      }
+    } catch (err: any) {
+      setAiTestResult({
+        success: false,
+        message: `Erro de comunicação ao testar a IA: ${err?.message || 'Erro'}`
+      });
+    } finally {
+      setIsTestingAi(false);
+    }
+  };
+
+  const handleSaveAiConfigNow = async () => {
+    const cleanConfig: SystemConfig = {
+      ...formData,
+      geminiApiKey: (formData.geminiApiKey || '').trim(),
+      aiModel: formData.aiModel || 'gemini-3.8-flash',
+      aiEnabled: formData.aiEnabled !== false
+    };
+    setFormData(cleanConfig);
+    onSaveConfig(cleanConfig);
+    try {
+      localStorage.setItem('holerite_system_config', JSON.stringify(cleanConfig));
+    } catch (e) {}
+    try {
+      await fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cleanConfig)
+      });
+      const statusRes = await fetch('/api/ai/status');
+      const statusData = await statusRes.json();
+      if (statusData?.success) {
+        setServerAiStatus({
+          configured: Boolean(statusData.configured),
+          keySource: statusData.keySource || 'database',
+          maskedKey: statusData.maskedKey || '',
+          model: statusData.model || cleanConfig.aiModel || 'gemini-3.8-flash'
+        });
+      }
+    } catch (e) {}
+    setAiTestResult({
+      success: true,
+      message: 'Chave da API e configurações de Inteligência Artificial salvas com sucesso no Banco de Dados (Firestore) e no Servidor VPS!'
+    });
+    confetti({ particleCount: 65, spread: 55, origin: { y: 0.6 } });
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (formData.certificadoA1) {
-      saveActiveA1Certificate(formData.certificadoA1);
+    const cleanedFormData: SystemConfig = {
+      ...formData,
+      geminiApiKey: (formData.geminiApiKey || '').trim(),
+      aiModel: formData.aiModel || 'gemini-3.8-flash',
+      aiEnabled: formData.aiEnabled !== false
+    };
+    if (cleanedFormData.certificadoA1) {
+      saveActiveA1Certificate(cleanedFormData.certificadoA1);
     }
-    onSaveConfig(formData);
+    onSaveConfig(cleanedFormData);
     try {
-      localStorage.setItem('holerite_system_config', JSON.stringify(formData));
+      localStorage.setItem('holerite_system_config', JSON.stringify(cleanedFormData));
     } catch (err) {}
     fetch('/api/config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(formData)
+      body: JSON.stringify(cleanedFormData)
     }).catch(() => {});
     confetti({ particleCount: 60, spread: 50, origin: { y: 0.6 } });
     onClose();
@@ -379,6 +501,16 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
             }`}
           >
             <Award className="w-4 h-4 text-amber-500" /> Certificado Digital A1 (ICP-Brasil)
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('IA_CONFIG')}
+            className={`py-3 px-4 border-b-2 flex items-center gap-2 cursor-pointer transition-colors whitespace-nowrap ${
+              activeTab === 'IA_CONFIG' ? 'border-indigo-600 text-indigo-700 bg-white font-bold shadow-sm' : 'border-transparent hover:text-slate-900'
+            }`}
+          >
+            <Sparkles className="w-4 h-4 text-indigo-600" /> Inteligência Artificial (IA)
           </button>
 
           <button
@@ -860,6 +992,215 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
                     Salvar e Ativar Este Certificado
                   </button>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB IA: Configuração de Inteligência Artificial (Google Gemini) para VPS e Banco de Dados */}
+          {activeTab === 'IA_CONFIG' && (
+            <div className="space-y-4">
+              {/* Header Banner */}
+              <div className="bg-gradient-to-r from-indigo-50 via-blue-50 to-slate-50 border border-indigo-200 rounded-xl p-4 flex items-start gap-3">
+                <div className="p-2.5 rounded-xl bg-indigo-600 text-white shrink-0 mt-0.5 shadow-sm">
+                  <Bot className="w-5 h-5" />
+                </div>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h4 className="font-bold text-slate-900 text-sm">
+                      Configuração da Inteligência Artificial (Google Gemini) na VPS
+                    </h4>
+                    <span className="text-[10px] bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-full font-bold border border-indigo-300">
+                      Persistência no Banco de Dados + Servidor
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
+                    Configure aqui a sua <strong>Chave da API do Google Gemini</strong> para que a importação de PDFs de Holerites e Comprovantes de IRPF com apoio de Inteligência Artificial funcione plenamente na sua VPS. Ao clicar em <strong>Salvar</strong>, a chave fica gravada no banco de dados (Firestore) e no disco do servidor.
+                  </p>
+                </div>
+              </div>
+
+              {/* Status Atual da IA no Servidor / Banco */}
+              <div
+                className={`p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                  Boolean((formData.geminiApiKey || '').trim()) || serverAiStatus?.configured
+                    ? 'bg-emerald-50/70 border-emerald-200'
+                    : 'bg-amber-50/80 border-amber-200'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`p-2.5 rounded-xl ${
+                      Boolean((formData.geminiApiKey || '').trim()) || serverAiStatus?.configured
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-amber-500 text-white'
+                    }`}
+                  >
+                    <Cpu className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-slate-900 text-xs">
+                        Status do Motor de IA na VPS:
+                      </span>
+                      {Boolean((formData.geminiApiKey || '').trim()) || serverAiStatus?.configured ? (
+                        <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold border border-emerald-300 flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Chave de API Configurada
+                        </span>
+                      ) : (
+                        <span className="text-[10px] bg-amber-100 text-amber-900 px-2 py-0.5 rounded-full font-bold border border-amber-300 flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3 text-amber-600" /> Aguardando Chave de API
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-600 mt-0.5">
+                      {(formData.geminiApiKey || '').trim()
+                        ? `Chave cadastrada no banco de dados (${formData.geminiApiKey!.trim().slice(0, 6)}••••••••${formData.geminiApiKey!.trim().slice(-4)}) • Modelo ativo: ${formData.aiModel || 'gemini-3.8-flash'}`
+                        : serverAiStatus?.configured
+                        ? `Chave ativa no servidor (${serverAiStatus.maskedKey}) • Origem: ${serverAiStatus.keySource === 'database' ? 'Banco de Dados' : 'Variável de Ambiente'} • Modelo: ${serverAiStatus.model}`
+                        : 'Nenhuma chave configurada na VPS. Cole sua chave AIza... abaixo e clique em Salvar.'}
+                    </p>
+                  </div>
+                </div>
+
+                <a
+                  href="https://aistudio.google.com/apikey"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3 py-1.5 bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg text-[11px] font-bold flex items-center gap-1.5 shadow-2xs transition-colors shrink-0 self-start sm:self-center"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  Gerar Chave no Google AI Studio
+                </a>
+              </div>
+
+              {/* Formulário da Chave da API e Modelo */}
+              <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-4 shadow-2xs">
+                <div>
+                  <label className="block text-slate-800 font-bold mb-1 text-xs">
+                    Chave da API do Google Gemini (GEMINI_API_KEY) *
+                  </label>
+                  <p className="text-[11px] text-slate-500 mb-2">
+                    Insira a chave iniciada por <code className="bg-slate-100 px-1 py-0.5 rounded font-mono text-slate-800">AIzaSy...</code> gerada no painel do Google AI Studio. Ela será salva de forma persistente no banco de dados e no servidor da VPS.
+                  </p>
+                  <div className="relative">
+                    <Key className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                    <input
+                      type={showGeminiKey ? 'text' : 'password'}
+                      value={formData.geminiApiKey || ''}
+                      onChange={(e) => setFormData({ ...formData, geminiApiKey: e.target.value })}
+                      placeholder="Ex: AIzaSyB1234567890abcdefghijklmnopqrstuv"
+                      className="w-full pl-9 pr-20 py-2 border border-slate-300 rounded-lg text-xs font-mono bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowGeminiKey(!showGeminiKey)}
+                      className="absolute right-2.5 top-2 text-slate-500 hover:text-slate-800 px-2 py-0.5 text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
+                    >
+                      {showGeminiKey ? (
+                        <>
+                          <EyeOff className="w-3.5 h-3.5" /> Ocultar
+                        </>
+                      ) : (
+                        <>
+                          <Eye className="w-3.5 h-3.5" /> Mostrar
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-slate-800 font-bold mb-1 text-xs">
+                      Modelo de Inteligência Artificial Gemini
+                    </label>
+                    <select
+                      value={formData.aiModel || 'gemini-3.8-flash'}
+                      onChange={(e) => setFormData({ ...formData, aiModel: e.target.value })}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs bg-white font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                    >
+                      <option value="gemini-3.8-flash">Gemini 3.8 Flash (Recomendado - Rápido e Alta Precisão)</option>
+                      <option value="gemini-3-flash-preview">Gemini 3 Flash Preview (Auditoria Contábil)</option>
+                      <option value="gemini-2.5-flash">Gemini 2.5 Flash (Estável Multipáginas)</option>
+                      <option value="gemini-2.5-pro">Gemini 2.5 Pro (Análise Profunda)</option>
+                    </select>
+                  </div>
+
+                  <div className="flex flex-col justify-end">
+                    <label className="flex items-center gap-2.5 p-2.5 bg-slate-50 border border-slate-200 rounded-lg cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={formData.aiEnabled !== false}
+                        onChange={(e) => setFormData({ ...formData, aiEnabled: e.target.checked })}
+                        className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
+                      />
+                      <div>
+                        <span className="text-slate-900 font-bold text-xs block">
+                          Ativar IA por padrão na Importação
+                        </span>
+                        <span className="text-[10.5px] text-slate-500 block">
+                          Inicia o importador de PDFs de Folha e IRPF com a IA selecionada
+                        </span>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Botões de Teste e Gravação Direta no Banco */}
+                <div className="pt-3 border-t border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+                  <button
+                    type="button"
+                    onClick={handleTestAiConnection}
+                    disabled={isTestingAi}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    {isTestingAi ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin text-indigo-600" />
+                        Testando Conexão com Google Gemini...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                        Testar Conexão da IA Agora
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleSaveAiConfigNow}
+                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer"
+                  >
+                    <Save className="w-4 h-4" />
+                    Salvar Chave da API no Banco de Dados
+                  </button>
+                </div>
+
+                {/* Resultado do Teste ou Salvamento */}
+                {aiTestResult && (
+                  <div
+                    className={`p-3.5 rounded-xl border flex items-start gap-2.5 text-xs ${
+                      aiTestResult.success
+                        ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                        : 'bg-rose-50 border-rose-200 text-rose-900'
+                    }`}
+                  >
+                    {aiTestResult.success ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                    ) : (
+                      <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                    )}
+                    <div className="space-y-1">
+                      <p className="font-bold">{aiTestResult.message}</p>
+                      {aiTestResult.modelUsed && (
+                        <p className="text-[11px] opacity-90">
+                          Modelo autenticado: <strong>{aiTestResult.modelUsed}</strong> • Tempo de resposta: <strong>{aiTestResult.durationMs}ms</strong>
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}

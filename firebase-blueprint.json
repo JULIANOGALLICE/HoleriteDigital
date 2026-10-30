@@ -97,7 +97,10 @@
         "emailApiKey": { "type": "string" },
         "emailTemplateAssunto": { "type": "string" },
         "emailTemplateCorpo": { "type": "string" },
-        "diasPrazoAssinatura": { "type": "number" }
+        "diasPrazoAssinatura": { "type": "number" },
+        "geminiApiKey": { "type": "string", "description": "Chave da API Google Gemini para processamento com IA na VPS" },
+        "aiModel": { "type": "string", "description": "Modelo Gemini utilizado na leitura de PDFs com IA" },
+        "aiEnabled": { "type": "boolean", "description": "Define se a importação com IA está ativa por padrão" }
       },
       "required": ["razaoSocial", "cei"]
     },

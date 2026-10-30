@@ -162,6 +162,9 @@ export interface SystemConfig {
   enviarPdfAutomaticoWhatsapp?: boolean;
   exigir2FALogin?: boolean;
   canal2FALogin?: 'WHATSAPP' | 'EMAIL' | 'AMBOS';
+  geminiApiKey?: string;
+  aiModel?: string;
+  aiEnabled?: boolean;
 }
 
 export interface UserAccount {
