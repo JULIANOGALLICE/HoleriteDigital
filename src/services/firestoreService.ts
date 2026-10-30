@@ -633,25 +633,18 @@ export async function clearAllDatabaseData(): Promise<void> {
       body: JSON.stringify({ reports: [] })
     }).catch(() => {});
     if (isFirestoreQuotaExceeded()) return;
-    const empSnap = await getDocs(collection(db, 'employees'));
-    for (const d of empSnap.docs) {
+    const collectionsToClear = ['employees', 'receipts', 'medicalCertificates', 'incomeReports'];
+    for (const colName of collectionsToClear) {
       if (isFirestoreQuotaExceeded()) return;
-      await deleteDoc(d.ref);
-    }
-    const recSnap = await getDocs(collection(db, 'receipts'));
-    for (const d of recSnap.docs) {
-      if (isFirestoreQuotaExceeded()) return;
-      await deleteDoc(d.ref);
-    }
-    const certSnap = await getDocs(collection(db, 'medicalCertificates'));
-    for (const d of certSnap.docs) {
-      if (isFirestoreQuotaExceeded()) return;
-      await deleteDoc(d.ref);
-    }
-    const irpfSnap = await getDocs(collection(db, 'incomeReports'));
-    for (const d of irpfSnap.docs) {
-      if (isFirestoreQuotaExceeded()) return;
-      await deleteDoc(d.ref);
+      const snap = await getDocs(collection(db, colName));
+      const docs = snap.docs;
+      const CHUNK_SIZE = 150;
+      for (let i = 0; i < docs.length; i += CHUNK_SIZE) {
+        if (isFirestoreQuotaExceeded()) break;
+        const batch = writeBatch(db);
+        docs.slice(i, i + CHUNK_SIZE).forEach(d => batch.delete(d.ref));
+        await batch.commit();
+      }
     }
   } catch (e) {
     handleWriteCatch(e);

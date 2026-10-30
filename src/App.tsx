@@ -81,10 +81,10 @@ const STORAGE_KEY_EMPLOYEES = 'holerite_employees_v2';
 const STORAGE_KEY_RECEIPTS = 'holerite_receipts_v2';
 const STORAGE_KEY_USERS = 'holerite_users_v2';
 const STORAGE_KEY_INCOME_REPORTS = 'holerite_income_reports_v2';
-const STORAGE_KEY_DELETED_EMPLOYEES = 'holerite_deleted_employees_v3';
-const STORAGE_KEY_DELETED_RECEIPTS = 'holerite_deleted_receipts_v2';
-const STORAGE_KEY_DELETED_USERS = 'holerite_deleted_users_v3';
-const STORAGE_KEY_DELETED_IRPF = 'holerite_deleted_irpf_v2';
+const STORAGE_KEY_DELETED_EMPLOYEES = 'holerite_deleted_employees_v4';
+const STORAGE_KEY_DELETED_RECEIPTS = 'holerite_deleted_receipts_v3';
+const STORAGE_KEY_DELETED_USERS = 'holerite_deleted_users_v4';
+const STORAGE_KEY_DELETED_IRPF = 'holerite_deleted_irpf_v3';
 
 function loadTombstoneSet(key: string, defaultItems: string[] = []): Set<string> {
   try {
@@ -106,7 +106,12 @@ function saveTombstoneSet(key: string, set: Set<string>) {
 }
 
 function isReceiptMathematicallyValid(r: PayReceipt): boolean {
-  if (!r || !Array.isArray(r.itens) || r.itens.length === 0) return false;
+  if (!r || !r.id || !r.employeeCodigo) return false;
+  // Recibos importados manualmente pelo usuário ou pela IA são sempre preservados integralmente
+  if (r.importadoManualmente) {
+    return Array.isArray(r.itens) && r.itens.length > 0;
+  }
+  if (!Array.isArray(r.itens) || r.itens.length === 0) return false;
   if (!r.salarioBase || r.salarioBase < 500) return false;
   // Rejeita rubricas inválidas criadas por erro antigo (onde descrição era o próprio nome do colaborador)
   if (r.itens.some(it => it.codigo === '1' && !it.descricao.toUpperCase().includes('HORAS') && !it.descricao.toUpperCase().includes('SAL'))) {
@@ -127,15 +132,18 @@ function isReceiptMathematicallyValid(r: PayReceipt): boolean {
 
 export default function App() {
   // Tombstone registries to prevent deleted records from being resurrected by snapshots or caches
-  const DEFAULT_DELETED_RECEIPTS = ['rec-6-2026-07', 'rec-6-2026-08', 'rec-6-2026-09'];
+  const DEFAULT_DELETED_RECEIPTS: string[] = [];
   const deletedEmployeesRef = useRef<Set<string>>(loadTombstoneSet(STORAGE_KEY_DELETED_EMPLOYEES, []));
   const deletedReceiptsRef = useRef<Set<string>>(loadTombstoneSet(STORAGE_KEY_DELETED_RECEIPTS, DEFAULT_DELETED_RECEIPTS));
   const deletedUsersRef = useRef<Set<string>>(loadTombstoneSet(STORAGE_KEY_DELETED_USERS, []));
   const deletedIrpfRef = useRef<Set<string>>(loadTombstoneSet(STORAGE_KEY_DELETED_IRPF));
   const verifiedEmployeesMapRef = useRef<Map<string, Employee>>(new Map(INITIAL_EMPLOYEES.map(e => [String(e.codigo).trim(), e])));
   const hasReceivedFirestoreReceiptsRef = useRef<boolean>(false);
+  const hasReceivedFirestoreTombstonesRef = useRef<boolean>(false);
+  const recentlyImportedReceiptsRef = useRef<Map<string, PayReceipt>>(new Map());
+  const reimportedEmployeesRef = useRef<Set<string>>(new Set());
 
-  const syncServerTombstones = (pushToFirestore = true) => {
+  const syncServerTombstones = async (pushToFirestore = true) => {
     saveTombstoneSet(STORAGE_KEY_DELETED_EMPLOYEES, deletedEmployeesRef.current);
     saveTombstoneSet(STORAGE_KEY_DELETED_RECEIPTS, deletedReceiptsRef.current);
     saveTombstoneSet(STORAGE_KEY_DELETED_USERS, deletedUsersRef.current);
@@ -152,7 +160,7 @@ export default function App() {
       body: JSON.stringify(payload)
     }).catch(() => {});
     if (pushToFirestore) {
-      saveTombstonesFirestore(payload).catch(() => {});
+      await saveTombstonesFirestore(payload).catch(() => {});
     }
   };
 
@@ -315,10 +323,21 @@ export default function App() {
     fetch('/api/tombstones')
       .then(res => res.json())
       .then(data => {
+        if (hasReceivedFirestoreTombstonesRef.current) return;
         if (data?.success && data.tombstones) {
-          (data.tombstones.deletedEmployees || []).forEach((id: string) => deletedEmployeesRef.current.add(String(id)));
+          (data.tombstones.deletedEmployees || []).forEach((id: string) => {
+            const clean = String(id).trim();
+            if (!reimportedEmployeesRef.current.has(clean)) {
+              deletedEmployeesRef.current.add(clean);
+            }
+          });
           (data.tombstones.deletedUsers || []).forEach((id: string) => deletedUsersRef.current.add(String(id)));
-          (data.tombstones.deletedReceipts || []).forEach((id: string) => deletedReceiptsRef.current.add(String(id)));
+          (data.tombstones.deletedReceipts || []).forEach((id: string) => {
+            const clean = String(id);
+            if (!recentlyImportedReceiptsRef.current.has(clean)) {
+              deletedReceiptsRef.current.add(clean);
+            }
+          });
           (data.tombstones.deletedIrpf || []).forEach((id: string) => deletedIrpfRef.current.add(String(id)));
           saveTombstoneSet(STORAGE_KEY_DELETED_EMPLOYEES, deletedEmployeesRef.current);
           saveTombstoneSet(STORAGE_KEY_DELETED_USERS, deletedUsersRef.current);
@@ -458,10 +477,20 @@ export default function App() {
   useEffect(() => {
     const unsubTombstones = subscribeTombstones((remoteTombstones) => {
       if (!remoteTombstones) return;
-      (remoteTombstones.deletedEmployees || []).forEach(id => deletedEmployeesRef.current.add(String(id)));
-      (remoteTombstones.deletedReceipts || []).forEach(id => deletedReceiptsRef.current.add(String(id)));
-      (remoteTombstones.deletedUsers || []).forEach(id => deletedUsersRef.current.add(String(id)));
-      (remoteTombstones.deletedIrpf || []).forEach(id => deletedIrpfRef.current.add(String(id)));
+      hasReceivedFirestoreTombstonesRef.current = true;
+      // Replace sets with authoritative Firestore tombstones (excluding any records re-imported in this session)
+      deletedEmployeesRef.current = new Set(
+        (remoteTombstones.deletedEmployees || [])
+          .map(String)
+          .filter(id => !reimportedEmployeesRef.current.has(id.trim()))
+      );
+      deletedReceiptsRef.current = new Set(
+        (remoteTombstones.deletedReceipts || [])
+          .map(String)
+          .filter(id => !recentlyImportedReceiptsRef.current.has(id))
+      );
+      deletedUsersRef.current = new Set((remoteTombstones.deletedUsers || []).map(String));
+      deletedIrpfRef.current = new Set((remoteTombstones.deletedIrpf || []).map(String));
 
       syncServerTombstones(false);
 
@@ -475,6 +504,7 @@ export default function App() {
       });
       setReceipts(prev => {
         const filtered = prev.filter(r => {
+          if (recentlyImportedReceiptsRef.current.has(r.id)) return true;
           const empCode = String(r.employeeCodigo).trim();
           return !deletedReceiptsRef.current.has(r.id) && !deletedEmployeesRef.current.has(empCode);
         });
@@ -558,36 +588,22 @@ export default function App() {
     const unsubReceipts = subscribeReceipts((remoteReceipts) => {
       if (remoteReceipts) {
         hasReceivedFirestoreReceiptsRef.current = true;
-        let tombstoneAdded = false;
-        remoteReceipts.forEach(r => {
-          const empCode = String(r.employeeCodigo).trim();
-          const isUnimportedJuliano = empCode === '6' && !r.importadoManualmente;
-          if (
-            deletedReceiptsRef.current.has(r.id) ||
-            deletedEmployeesRef.current.has(empCode) ||
-            isUnimportedJuliano
-          ) {
-            if (!deletedReceiptsRef.current.has(r.id)) {
-              deletedReceiptsRef.current.add(r.id);
-              tombstoneAdded = true;
-            }
-          }
-        });
-        if (tombstoneAdded) {
-          syncServerTombstones();
-        }
 
         const validRemote = remoteReceipts.filter(r => {
+          if (recentlyImportedReceiptsRef.current.has(r.id)) return true;
           const empCode = String(r.employeeCodigo).trim();
           if (deletedReceiptsRef.current.has(r.id) || deletedEmployeesRef.current.has(empCode)) return false;
           if (empCode === '6' && !r.importadoManualmente) return false;
           return isReceiptMathematicallyValid(r);
         });
 
-        // Firestore is the authoritative source of truth for receipts across VPS and AI Studio:
-        // if receipts were deleted in Firestore (e.g., on the VPS), do NOT resurrect them from stale local prev state
+        // Firestore is the authoritative source of truth for receipts across VPS and AI Studio,
+        // while preserving any receipts just imported in the current session while batch writes complete
         setReceipts(() => {
           const map = new Map<string, PayReceipt>();
+          recentlyImportedReceiptsRef.current.forEach((r, id) => {
+            map.set(id, r);
+          });
           validRemote.forEach(r => {
             map.set(r.id, r);
           });
@@ -978,18 +994,22 @@ export default function App() {
       importadoManualmente: true
     }));
 
-    // Un-tombstone any re-imported employees or receipts and register in verified refs
+    // Un-tombstone any re-imported employees or receipts and register in verified & recently imported refs
     newOrUpdatedEmployees.forEach(emp => {
       const code = String(emp.codigo).trim();
+      reimportedEmployeesRef.current.add(code);
       deletedEmployeesRef.current.delete(code);
       deletedUsersRef.current.delete(`user-${code}`);
       deletedUsersRef.current.delete(`user-colab-${code}`);
       verifiedEmployeesMapRef.current.set(code, { ...emp, codigo: code });
     });
     stampedReceipts.forEach(rec => {
+      const code = String(rec.employeeCodigo).trim();
+      reimportedEmployeesRef.current.add(code);
+      deletedEmployeesRef.current.delete(code);
       deletedReceiptsRef.current.delete(rec.id);
+      recentlyImportedReceiptsRef.current.set(rec.id, rec);
     });
-    syncServerTombstones();
 
     // Merge employees by codigo and persist to localStorage + server disk immediately
     setEmployees(prev => {
@@ -1027,6 +1047,9 @@ export default function App() {
       }).catch(() => {});
       return finalReceipts;
     });
+
+    // Ensure tombstones are cleared in Firestore BEFORE saving batches so listeners across tabs see clean tombstones
+    await syncServerTombstones(true);
 
     // Persist in Firestore using atomic batches
     saveEmployeesBatchFirestore(newOrUpdatedEmployees).catch(() => {});
@@ -1182,6 +1205,8 @@ export default function App() {
   };
 
   const handleClearProductionData = async () => {
+    recentlyImportedReceiptsRef.current.clear();
+    reimportedEmployeesRef.current.clear();
     receipts.forEach(r => deletedReceiptsRef.current.add(r.id));
     employees.forEach(e => deletedEmployeesRef.current.add(String(e.codigo).trim()));
     syncServerTombstones();
@@ -1507,7 +1532,11 @@ export default function App() {
     const matchingReceipts = receipts.filter(
       r => r.id === receipt.id || (String(r.employeeCodigo).trim() === cleanCode && r.mesAno === receipt.mesAno)
     );
-    matchingReceipts.forEach(r => deletedReceiptsRef.current.add(r.id));
+    matchingReceipts.forEach(r => {
+      recentlyImportedReceiptsRef.current.delete(r.id);
+      deletedReceiptsRef.current.add(r.id);
+    });
+    recentlyImportedReceiptsRef.current.delete(receipt.id);
     deletedReceiptsRef.current.add(receipt.id);
     syncServerTombstones();
 
@@ -1543,7 +1572,10 @@ export default function App() {
       return;
     }
 
-    toDelete.forEach(r => deletedReceiptsRef.current.add(r.id));
+    toDelete.forEach(r => {
+      recentlyImportedReceiptsRef.current.delete(r.id);
+      deletedReceiptsRef.current.add(r.id);
+    });
     syncServerTombstones();
 
     setReceipts(prev => {
@@ -1578,7 +1610,10 @@ export default function App() {
       return;
     }
 
-    toDelete.forEach(r => deletedReceiptsRef.current.add(r.id));
+    toDelete.forEach(r => {
+      recentlyImportedReceiptsRef.current.delete(r.id);
+      deletedReceiptsRef.current.add(r.id);
+    });
     syncServerTombstones();
 
     setReceipts(prev => {
@@ -1641,8 +1676,10 @@ export default function App() {
     const cleanEmail = employee.email ? employee.email.trim().toLowerCase() : '';
 
     // Registra o código nos tombstones imediatamente para impedir ressurreição por listeners em tempo real
+    reimportedEmployeesRef.current.delete(codigo);
     deletedEmployeesRef.current.add(codigo);
     if (employee.id && String(employee.id).trim()) {
+      reimportedEmployeesRef.current.delete(String(employee.id).trim());
       deletedEmployeesRef.current.add(String(employee.id).trim());
     }
     saveTombstoneSet(STORAGE_KEY_DELETED_EMPLOYEES, deletedEmployeesRef.current);
@@ -1654,7 +1691,10 @@ export default function App() {
     // 1. Encontra e remove holerites vinculados
     const receiptsToDelete = receipts.filter(r => String(r.employeeCodigo).trim() === codigo);
     const recCount = receiptsToDelete.length;
-    receiptsToDelete.forEach(r => deletedReceiptsRef.current.add(r.id));
+    receiptsToDelete.forEach(r => {
+      recentlyImportedReceiptsRef.current.delete(r.id);
+      deletedReceiptsRef.current.add(r.id);
+    });
     saveTombstoneSet(STORAGE_KEY_DELETED_RECEIPTS, deletedReceiptsRef.current);
 
     setReceipts(prev => {

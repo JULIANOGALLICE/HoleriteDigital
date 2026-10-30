@@ -180,6 +180,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
     return list;
   }, [receipts]);
 
+  React.useEffect(() => {
+    if (receipts.length > 0 && availableMonths.length > 0 && !availableMonths.includes(selectedMonth)) {
+      setSelectedMonth(availableMonths[0]);
+    }
+  }, [receipts.length, availableMonths, selectedMonth]);
+
   // Lista de anos para exclusão anual de holerites
   const availableReceiptYears = useMemo(() => {
     const years = new Set<string>();
