@@ -11,8 +11,21 @@ import {
   query,
   where
 } from 'firebase/firestore';
-import { db, auth } from '../firebase';
+import {
+  db,
+  auth,
+  isFirestoreQuotaExceeded,
+  markFirestoreQuotaExceeded,
+  isQuotaExceededError
+} from '../firebase';
 import { Employee, PayReceipt, SystemConfig, SignatureVerification, UserAccount, MedicalCertificate, IncomeReport, SystemLog } from '../types';
+
+function handleWriteCatch(error: unknown): void {
+  if (isQuotaExceededError(error)) {
+    markFirestoreQuotaExceeded(error);
+  }
+}
+
 
 export enum OperationType {
   CREATE = 'create',
@@ -83,6 +96,7 @@ export const DEFAULT_CONFIG: SystemConfig = {
 
 // 1. Employees
 export function subscribeEmployees(callback: (employees: Employee[]) => void, onError?: (err: any) => void) {
+  if (isFirestoreQuotaExceeded()) return () => {};
   const path = 'employees';
   return onSnapshot(
     collection(db, path),
@@ -99,7 +113,7 @@ export function subscribeEmployees(callback: (employees: Employee[]) => void, on
       callback(list);
     },
     (err) => {
-      console.warn('Fallback to local if Firestore permission error: ', err.message);
+      handleWriteCatch(err);
       if (onError) onError(err);
     }
   );
@@ -123,18 +137,20 @@ export function cleanUndefined<T>(obj: T): T {
 }
 
 export async function saveEmployeeFirestore(employee: Employee): Promise<void> {
+  if (isFirestoreQuotaExceeded()) return;
   const cleanCode = String(employee.codigo).trim();
   try {
     await setDoc(doc(db, 'employees', cleanCode), cleanUndefined({ ...employee, codigo: cleanCode }), { merge: true });
   } catch (error) {
-    console.warn('saveEmployeeFirestore notice:', error);
+    handleWriteCatch(error);
   }
 }
 
 export async function saveEmployeesBatchFirestore(employeesList: Employee[]): Promise<void> {
-  if (!employeesList || employeesList.length === 0) return;
+  if (!employeesList || employeesList.length === 0 || isFirestoreQuotaExceeded()) return;
   const CHUNK_SIZE = 150;
   for (let i = 0; i < employeesList.length; i += CHUNK_SIZE) {
+    if (isFirestoreQuotaExceeded()) break;
     const chunk = employeesList.slice(i, i + CHUNK_SIZE);
     try {
       const batch = writeBatch(db);
@@ -145,18 +161,14 @@ export async function saveEmployeesBatchFirestore(employeesList: Employee[]): Pr
       });
       await batch.commit();
     } catch (batchError) {
-      console.warn('saveEmployeesBatchFirestore chunk error, fallback to individual sets:', batchError);
-      await Promise.allSettled(
-        chunk.map(emp => {
-          const cleanCode = String(emp.codigo).trim();
-          return setDoc(doc(db, 'employees', cleanCode), cleanUndefined({ ...emp, codigo: cleanCode }), { merge: true });
-        })
-      );
+      handleWriteCatch(batchError);
+      if (isFirestoreQuotaExceeded()) break;
     }
   }
 }
 
 export async function deleteEmployeeFirestore(codigo: string, docId?: string): Promise<void> {
+  if (isFirestoreQuotaExceeded()) return;
   const cleanCode = String(codigo).trim();
   const idsToDelete = new Set<string>([cleanCode]);
   if (docId && String(docId).trim()) {
@@ -165,37 +177,36 @@ export async function deleteEmployeeFirestore(codigo: string, docId?: string): P
 
   try {
     // Delete known document IDs directly
-    await Promise.allSettled(
-      Array.from(idsToDelete).map(id => deleteDoc(doc(db, 'employees', id)))
-    );
+    for (const id of idsToDelete) {
+      if (isFirestoreQuotaExceeded()) return;
+      await deleteDoc(doc(db, 'employees', id));
+    }
 
     // Also query by 'codigo' field (both string and number) in case the document ID differs
     const qStr = query(collection(db, 'employees'), where('codigo', '==', cleanCode));
     const snapStr = await getDocs(qStr);
-    const extraDeletes: Promise<void>[] = [];
-    snapStr.forEach(d => {
-      extraDeletes.push(deleteDoc(d.ref));
-    });
+    for (const d of snapStr.docs) {
+      if (isFirestoreQuotaExceeded()) return;
+      await deleteDoc(d.ref);
+    }
 
     const numCode = Number(cleanCode);
     if (!Number.isNaN(numCode)) {
       const qNum = query(collection(db, 'employees'), where('codigo', '==', numCode));
       const snapNum = await getDocs(qNum);
-      snapNum.forEach(d => {
-        extraDeletes.push(deleteDoc(d.ref));
-      });
-    }
-
-    if (extraDeletes.length > 0) {
-      await Promise.allSettled(extraDeletes);
+      for (const d of snapNum.docs) {
+        if (isFirestoreQuotaExceeded()) return;
+        await deleteDoc(d.ref);
+      }
     }
   } catch (error) {
-    console.warn('deleteEmployeeFirestore notice:', error);
+    handleWriteCatch(error);
   }
 }
 
 // 2. Receipts
 export function subscribeReceipts(callback: (receipts: PayReceipt[]) => void, onError?: (err: any) => void) {
+  if (isFirestoreQuotaExceeded()) return () => {};
   const path = 'receipts';
   return onSnapshot(
     collection(db, path),
@@ -207,25 +218,26 @@ export function subscribeReceipts(callback: (receipts: PayReceipt[]) => void, on
       callback(list);
     },
     (err) => {
-      console.warn('Fallback to local if Firestore permission error: ', err.message);
+      handleWriteCatch(err);
       if (onError) onError(err);
     }
   );
 }
 
 export async function saveReceiptFirestore(receipt: PayReceipt): Promise<void> {
-  const path = `receipts/${receipt.id}`;
+  if (isFirestoreQuotaExceeded()) return;
   try {
     await setDoc(doc(db, 'receipts', receipt.id), cleanUndefined(receipt), { merge: true });
   } catch (error) {
-    console.warn('saveReceiptFirestore notice:', error);
+    handleWriteCatch(error);
   }
 }
 
 export async function saveReceiptsBatchFirestore(receiptsList: PayReceipt[]): Promise<void> {
-  if (!receiptsList || receiptsList.length === 0) return;
+  if (!receiptsList || receiptsList.length === 0 || isFirestoreQuotaExceeded()) return;
   const CHUNK_SIZE = 150;
   for (let i = 0; i < receiptsList.length; i += CHUNK_SIZE) {
+    if (isFirestoreQuotaExceeded()) break;
     const chunk = receiptsList.slice(i, i + CHUNK_SIZE);
     try {
       const batch = writeBatch(db);
@@ -235,10 +247,8 @@ export async function saveReceiptsBatchFirestore(receiptsList: PayReceipt[]): Pr
       });
       await batch.commit();
     } catch (batchError) {
-      console.warn('saveReceiptsBatchFirestore chunk error, fallback to individual sets:', batchError);
-      await Promise.allSettled(
-        chunk.map(rec => setDoc(doc(db, 'receipts', rec.id), cleanUndefined(rec), { merge: true }))
-      );
+      handleWriteCatch(batchError);
+      if (isFirestoreQuotaExceeded()) break;
     }
   }
 }
@@ -249,7 +259,7 @@ export async function signReceiptFirestore(
   metodo: 'WHATSAPP' | 'EMAIL',
   fullReceipt?: PayReceipt
 ): Promise<void> {
-  const path = `receipts/${receiptId}`;
+  if (isFirestoreQuotaExceeded()) return;
   const now = new Date();
   const formattedDate = now.toLocaleDateString('pt-BR') + ' às ' + now.toLocaleTimeString('pt-BR');
 
@@ -268,7 +278,7 @@ export async function signReceiptFirestore(
       await setDoc(doc(db, 'receipts', receiptId), updateData, { merge: true });
     }
   } catch (error) {
-    console.warn('signReceiptFirestore notice:', error);
+    handleWriteCatch(error);
   }
 }
 
@@ -277,9 +287,10 @@ export async function deleteReceiptFirestore(
   employeeCodigo?: string,
   competencia?: string
 ): Promise<void> {
+  if (isFirestoreQuotaExceeded()) return;
   try {
     await deleteDoc(doc(db, 'receipts', receiptId));
-    if (employeeCodigo) {
+    if (employeeCodigo && !isFirestoreQuotaExceeded()) {
       const cleanCode = String(employeeCodigo).trim();
       const q = competencia
         ? query(
@@ -289,23 +300,23 @@ export async function deleteReceiptFirestore(
           )
         : query(collection(db, 'receipts'), where('employeeCodigo', '==', cleanCode));
       const snap = await getDocs(q);
-      const extra: Promise<void>[] = [];
-      snap.forEach(d => {
+      for (const d of snap.docs) {
+        if (isFirestoreQuotaExceeded()) break;
         if (!competencia || d.data()?.competencia === competencia || d.id === receiptId) {
-          extra.push(deleteDoc(d.ref));
+          await deleteDoc(d.ref);
         }
-      });
-      if (extra.length > 0) await Promise.allSettled(extra);
+      }
     }
   } catch (error) {
-    console.warn('deleteReceiptFirestore notice:', error);
+    handleWriteCatch(error);
   }
 }
 
 export async function deleteReceiptsBatchFirestore(receiptIds: string[]): Promise<void> {
-  if (!receiptIds || receiptIds.length === 0) return;
+  if (!receiptIds || receiptIds.length === 0 || isFirestoreQuotaExceeded()) return;
   const CHUNK_SIZE = 150;
   for (let i = 0; i < receiptIds.length; i += CHUNK_SIZE) {
+    if (isFirestoreQuotaExceeded()) break;
     const chunk = receiptIds.slice(i, i + CHUNK_SIZE);
     try {
       const batch = writeBatch(db);
@@ -314,8 +325,8 @@ export async function deleteReceiptsBatchFirestore(receiptIds: string[]): Promis
       });
       await batch.commit();
     } catch (e) {
-      console.warn('deleteReceiptsBatchFirestore batch error, fallback to individual deletes:', e);
-      await Promise.allSettled(chunk.map(id => deleteDoc(doc(db, 'receipts', id))));
+      handleWriteCatch(e);
+      if (isFirestoreQuotaExceeded()) break;
     }
   }
 }
@@ -325,6 +336,7 @@ export async function toggleEmployeeBlockFirestore(
   bloqueado: boolean,
   motivo?: string
 ): Promise<void> {
+  if (isFirestoreQuotaExceeded()) return;
   try {
     const payload: Partial<Employee> = {
       bloqueado,
@@ -333,13 +345,13 @@ export async function toggleEmployeeBlockFirestore(
     };
     await updateDoc(doc(db, 'employees', employeeCodigo), cleanUndefined(payload));
   } catch (error) {
-    console.warn('toggleEmployeeBlockFirestore notice:', error);
+    handleWriteCatch(error);
   }
 }
 
 // 3. System Config
 export function subscribeSystemConfig(callback: (config: SystemConfig) => void) {
-  const path = 'systemConfig/default';
+  if (isFirestoreQuotaExceeded()) return () => {};
   return onSnapshot(
     doc(db, 'systemConfig', 'default'),
     (snap) => {
@@ -355,17 +367,17 @@ export function subscribeSystemConfig(callback: (config: SystemConfig) => void) 
       }
     },
     (err) => {
-      console.warn('Firestore systemConfig subscription notice: ', err.message);
+      handleWriteCatch(err);
     }
   );
 }
 
 export async function saveSystemConfigFirestore(config: SystemConfig): Promise<void> {
-  const path = 'systemConfig/default';
+  if (isFirestoreQuotaExceeded()) return;
   try {
     await setDoc(doc(db, 'systemConfig', 'default'), cleanUndefined(config), { merge: true });
   } catch (error) {
-    console.warn('saveSystemConfigFirestore notice:', error);
+    handleWriteCatch(error);
   }
 }
 
@@ -395,11 +407,12 @@ export async function createSignatureVerificationCode(
     localStorage.setItem(`sig_otp_${receiptId}`, code);
   } catch {}
 
-  const path = `signatureVerifications/${verificationId}`;
-  try {
-    await setDoc(doc(db, 'signatureVerifications', verificationId), verification);
-  } catch (error) {
-    console.warn('Could not write signatureVerification to Firestore, fallback to local verification:', error);
+  if (!isFirestoreQuotaExceeded()) {
+    try {
+      await setDoc(doc(db, 'signatureVerifications', verificationId), verification);
+    } catch (error) {
+      handleWriteCatch(error);
+    }
   }
   return code;
 }
@@ -456,6 +469,7 @@ export async function validateSignatureCode(
 
 // 5. Users and Roles
 export function subscribeUsers(callback: (users: UserAccount[]) => void) {
+  if (isFirestoreQuotaExceeded()) return () => {};
   const path = 'users';
   return onSnapshot(
     collection(db, path),
@@ -471,26 +485,40 @@ export function subscribeUsers(callback: (users: UserAccount[]) => void) {
       callback(users);
     },
     (error) => {
-      console.warn('Realtime subscription error for users:', error.message);
+      handleWriteCatch(error);
     }
   );
 }
 
 export async function saveUserAccount(user: UserAccount): Promise<void> {
+  if (isFirestoreQuotaExceeded()) return;
   const uid = user.uid || (user.employeeCodigo ? `user-${user.employeeCodigo}` : `user-${Date.now()}`);
   const payload = cleanUndefined({ ...user, uid });
   try {
     await setDoc(doc(db, 'users', uid), payload, { merge: true });
   } catch (error) {
-    console.warn('saveUserAccount notice:', error);
+    handleWriteCatch(error);
   }
 }
 
 export async function saveUsersBatchFirestore(usersList: UserAccount[]): Promise<void> {
   if (!usersList || usersList.length === 0) return;
+
+  // Always sync to server-side permanent disk storage first
+  try {
+    fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ users: usersList })
+    }).catch(() => {});
+  } catch (e) {}
+
+  if (isFirestoreQuotaExceeded()) return;
+
   // Chunking in slices of 150 documents to stay well below Firestore 500 limits
   const CHUNK_SIZE = 150;
   for (let i = 0; i < usersList.length; i += CHUNK_SIZE) {
+    if (isFirestoreQuotaExceeded()) break;
     const chunk = usersList.slice(i, i + CHUNK_SIZE);
     try {
       const batch = writeBatch(db);
@@ -501,27 +529,14 @@ export async function saveUsersBatchFirestore(usersList: UserAccount[]): Promise
       });
       await batch.commit();
     } catch (batchError) {
-      console.warn('saveUsersBatchFirestore chunk batch error, falling back to individual sets:', batchError);
-      await Promise.allSettled(
-        chunk.map(user => {
-          const uid = user.uid || (user.employeeCodigo ? `user-${user.employeeCodigo}` : `user-${Date.now()}`);
-          return setDoc(doc(db, 'users', uid), cleanUndefined({ ...user, uid }), { merge: true });
-        })
-      );
+      handleWriteCatch(batchError);
+      if (isFirestoreQuotaExceeded()) break;
     }
   }
-
-  // Also sync to server-side permanent disk storage if backend route is available
-  try {
-    fetch('/api/users', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ users: usersList })
-    }).catch(() => {});
-  } catch (e) {}
 }
 
 export async function deleteUserAccountFirestore(uid: string, employeeCodigo?: string): Promise<void> {
+  if (isFirestoreQuotaExceeded()) return;
   const idsToDelete = new Set<string>();
   if (uid && String(uid).trim()) idsToDelete.add(String(uid).trim());
   if (employeeCodigo && String(employeeCodigo).trim()) {
@@ -530,28 +545,28 @@ export async function deleteUserAccountFirestore(uid: string, employeeCodigo?: s
     idsToDelete.add(`user-colab-${cleanCode}`);
   }
   try {
-    await Promise.allSettled(
-      Array.from(idsToDelete).map(id => deleteDoc(doc(db, 'users', id)))
-    );
-    if (employeeCodigo && String(employeeCodigo).trim()) {
+    for (const id of idsToDelete) {
+      if (isFirestoreQuotaExceeded()) return;
+      await deleteDoc(doc(db, 'users', id));
+    }
+    if (employeeCodigo && String(employeeCodigo).trim() && !isFirestoreQuotaExceeded()) {
       const cleanCode = String(employeeCodigo).trim();
       const q = query(collection(db, 'users'), where('employeeCodigo', '==', cleanCode));
       const snap = await getDocs(q);
-      const extra: Promise<void>[] = [];
-      snap.forEach(d => {
+      for (const d of snap.docs) {
+        if (isFirestoreQuotaExceeded()) break;
         if ((d.data() as UserAccount).role !== 'GESTOR') {
-          extra.push(deleteDoc(d.ref));
+          await deleteDoc(d.ref);
         }
-      });
-      if (extra.length > 0) await Promise.allSettled(extra);
+      }
     }
   } catch (error) {
-    console.warn('deleteUserAccountFirestore notice:', error);
+    handleWriteCatch(error);
   }
 }
 
 export async function getUserAccount(uid: string): Promise<UserAccount | null> {
-  const path = `users/${uid}`;
+  if (isFirestoreQuotaExceeded()) return null;
   try {
     const snap = await getDoc(doc(db, 'users', uid));
     if (snap.exists()) {
@@ -559,6 +574,7 @@ export async function getUserAccount(uid: string): Promise<UserAccount | null> {
     }
     return null;
   } catch (error) {
+    handleWriteCatch(error);
     return null;
   }
 }
@@ -566,29 +582,34 @@ export async function getUserAccount(uid: string): Promise<UserAccount | null> {
 // Clean all records for pristine production database
 export async function clearAllDatabaseData(): Promise<void> {
   try {
-    const empSnap = await getDocs(collection(db, 'employees'));
-    for (const d of empSnap.docs) {
-      await deleteDoc(d.ref);
-    }
-    const recSnap = await getDocs(collection(db, 'receipts'));
-    for (const d of recSnap.docs) {
-      await deleteDoc(d.ref);
-    }
-    const certSnap = await getDocs(collection(db, 'medicalCertificates'));
-    for (const d of certSnap.docs) {
-      await deleteDoc(d.ref);
-    }
-    const irpfSnap = await getDocs(collection(db, 'incomeReports'));
-    for (const d of irpfSnap.docs) {
-      await deleteDoc(d.ref);
-    }
     fetch('/api/income-reports', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ reports: [] })
     }).catch(() => {});
+    if (isFirestoreQuotaExceeded()) return;
+    const empSnap = await getDocs(collection(db, 'employees'));
+    for (const d of empSnap.docs) {
+      if (isFirestoreQuotaExceeded()) return;
+      await deleteDoc(d.ref);
+    }
+    const recSnap = await getDocs(collection(db, 'receipts'));
+    for (const d of recSnap.docs) {
+      if (isFirestoreQuotaExceeded()) return;
+      await deleteDoc(d.ref);
+    }
+    const certSnap = await getDocs(collection(db, 'medicalCertificates'));
+    for (const d of certSnap.docs) {
+      if (isFirestoreQuotaExceeded()) return;
+      await deleteDoc(d.ref);
+    }
+    const irpfSnap = await getDocs(collection(db, 'incomeReports'));
+    for (const d of irpfSnap.docs) {
+      if (isFirestoreQuotaExceeded()) return;
+      await deleteDoc(d.ref);
+    }
   } catch (e) {
-    console.error(e);
+    handleWriteCatch(e);
   }
 }
 
@@ -599,6 +620,7 @@ export function subscribeMedicalCertificates(
   callback: (certificates: MedicalCertificate[]) => void,
   onError?: (err: any) => void
 ) {
+  if (isFirestoreQuotaExceeded()) return () => {};
   const path = 'medicalCertificates';
   return onSnapshot(
     collection(db, path),
@@ -637,13 +659,14 @@ export function subscribeMedicalCertificates(
       callback(list);
     },
     (err) => {
-      console.warn('Realtime subscription notice for medicalCertificates:', err.message);
+      handleWriteCatch(err);
       if (onError) onError(err);
     }
   );
 }
 
 export async function saveMedicalCertificateFirestore(certificate: MedicalCertificate): Promise<void> {
+  if (isFirestoreQuotaExceeded()) return;
   const certId = certificate.id || `cert-${Date.now()}`;
   const base64Str = certificate.arquivoBase64 || '';
 
@@ -660,6 +683,7 @@ export async function saveMedicalCertificateFirestore(certificate: MedicalCertif
 
       // Save chunks first so when main doc triggers listener, chunks are ready
       for (let idx = 0; idx < chunks.length; idx++) {
+        if (isFirestoreQuotaExceeded()) return;
         const chunkDocId = `${certId}_chunk_${idx}`;
         await setDoc(doc(db, 'medicalCertificates', chunkDocId), {
           isChunk: true,
@@ -682,9 +706,12 @@ export async function saveMedicalCertificateFirestore(certificate: MedicalCertif
       await setDoc(doc(db, 'medicalCertificates', certId), data, { merge: true });
     }
   } catch (error: any) {
-    console.warn('saveMedicalCertificateFirestore error:', error);
+    if (isQuotaExceededError(error)) {
+      markFirestoreQuotaExceeded(error);
+      return;
+    }
     const rawMsg = error?.message || String(error);
-    if (rawMsg.includes('longer than') || rawMsg.includes('exceeds the maximum allowed size') || rawMsg.includes('resource-exhausted')) {
+    if (rawMsg.includes('longer than') || rawMsg.includes('exceeds the maximum allowed size')) {
       throw new Error('A foto ou arquivo é muito grande para o banco de dados (limite excedido). Tente tirar uma foto mais próxima ou enviar um arquivo menor.');
     }
     if (rawMsg.includes('permission-denied') || rawMsg.includes('Missing or insufficient permissions')) {
@@ -703,6 +730,7 @@ export async function updateMedicalCertificateStatusFirestore(
   parecerRH?: string,
   analisadoPor?: string
 ): Promise<void> {
+  if (isFirestoreQuotaExceeded()) return;
   try {
     const updatePayload: Partial<MedicalCertificate> = {
       status,
@@ -712,21 +740,20 @@ export async function updateMedicalCertificateStatusFirestore(
     };
     await updateDoc(doc(db, 'medicalCertificates', id), updatePayload);
   } catch (error) {
-    console.warn('updateMedicalCertificateStatusFirestore error:', error);
-    throw error;
+    handleWriteCatch(error);
   }
 }
 
 export async function deleteMedicalCertificateFirestore(id: string): Promise<void> {
+  if (isFirestoreQuotaExceeded()) return;
   try {
     await deleteDoc(doc(db, 'medicalCertificates', id));
-    // Also clean up any possible chunks in background
     for (let i = 0; i < 12; i++) {
+      if (isFirestoreQuotaExceeded()) break;
       deleteDoc(doc(db, 'medicalCertificates', `${id}_chunk_${i}`)).catch(() => {});
     }
   } catch (error) {
-    console.warn('deleteMedicalCertificateFirestore error:', error);
-    throw error;
+    handleWriteCatch(error);
   }
 }
 
@@ -735,6 +762,7 @@ export async function deleteMedicalCertificateFirestore(id: string): Promise<voi
 // ==========================================
 
 export async function saveIncomeReportFirestore(report: IncomeReport): Promise<void> {
+  if (isFirestoreQuotaExceeded()) return;
   const reportId = report.id || `irpf-${report.beneficiario.employeeCodigo}-${report.anoCalendario}`;
   const safeReport: IncomeReport = {
     ...report,
@@ -758,22 +786,24 @@ export async function saveIncomeReportFirestore(report: IncomeReport): Promise<v
   try {
     await setDoc(doc(db, 'incomeReports', reportId), data, { merge: true });
   } catch (error) {
-    console.warn('saveIncomeReportFirestore error:', error);
-    throw error;
+    handleWriteCatch(error);
   }
 }
 
 export async function saveIncomeReportsBatchFirestore(reports: IncomeReport[]): Promise<void> {
+  if (isFirestoreQuotaExceeded()) return;
   for (const report of reports) {
+    if (isFirestoreQuotaExceeded()) break;
     try {
       await saveIncomeReportFirestore(report);
     } catch (e) {
-      console.warn(`Erro ao salvar informe ${report.id} no Firestore:`, e);
+      handleWriteCatch(e);
     }
   }
 }
 
 export async function getIncomeReportsFirestore(): Promise<IncomeReport[]> {
+  if (isFirestoreQuotaExceeded()) return [];
   try {
     const snap = await getDocs(collection(db, 'incomeReports'));
     const reports: IncomeReport[] = [];
@@ -782,12 +812,13 @@ export async function getIncomeReportsFirestore(): Promise<IncomeReport[]> {
     });
     return reports;
   } catch (error) {
-    console.warn('getIncomeReportsFirestore error:', error);
+    handleWriteCatch(error);
     return [];
   }
 }
 
 export function subscribeToIncomeReports(callback: (reports: IncomeReport[]) => void): () => void {
+  if (isFirestoreQuotaExceeded()) return () => {};
   return onSnapshot(
     collection(db, 'incomeReports'),
     (snap) => {
@@ -798,22 +829,22 @@ export function subscribeToIncomeReports(callback: (reports: IncomeReport[]) => 
       callback(reports);
     },
     (err) => {
-      console.warn('subscribeToIncomeReports error:', err);
+      handleWriteCatch(err);
     }
   );
 }
 
 export async function deleteIncomeReportFirestore(id: string): Promise<void> {
+  if (isFirestoreQuotaExceeded()) return;
   try {
     await deleteDoc(doc(db, 'incomeReports', id));
   } catch (error) {
-    console.warn('deleteIncomeReportFirestore error:', error);
-    throw error;
+    handleWriteCatch(error);
   }
 }
 
 export async function deleteIncomeReportsBatchFirestore(ids: string[]): Promise<void> {
-  if (!ids || ids.length === 0) return;
+  if (!ids || ids.length === 0 || isFirestoreQuotaExceeded()) return;
   try {
     const batch = writeBatch(db);
     ids.forEach(id => {
@@ -821,8 +852,7 @@ export async function deleteIncomeReportsBatchFirestore(ids: string[]): Promise<
     });
     await batch.commit();
   } catch (error) {
-    console.warn('deleteIncomeReportsBatchFirestore batch error, trying fallback:', error);
-    await Promise.allSettled(ids.map(id => deleteDoc(doc(db, 'incomeReports', id))));
+    handleWriteCatch(error);
   }
 }
 
@@ -831,19 +861,21 @@ export async function deleteIncomeReportsBatchFirestore(ids: string[]): Promise<
 // ==========================================
 
 export async function saveSystemLogFirestore(log: SystemLog): Promise<void> {
+  if (isFirestoreQuotaExceeded()) return;
   const logId = log.id || `log-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
   const data = cleanUndefined({ ...log, id: logId });
   try {
     await setDoc(doc(db, 'systemLogs', logId), data, { merge: true });
   } catch (error) {
-    console.warn('saveSystemLogFirestore error:', error);
+    handleWriteCatch(error);
   }
 }
 
 export async function saveSystemLogsBatchFirestore(logs: SystemLog[]): Promise<void> {
-  if (!logs || logs.length === 0) return;
+  if (!logs || logs.length === 0 || isFirestoreQuotaExceeded()) return;
   const CHUNK_SIZE = 150;
   for (let i = 0; i < logs.length; i += CHUNK_SIZE) {
+    if (isFirestoreQuotaExceeded()) break;
     const chunk = logs.slice(i, i + CHUNK_SIZE);
     try {
       const batch = writeBatch(db);
@@ -853,13 +885,14 @@ export async function saveSystemLogsBatchFirestore(logs: SystemLog[]): Promise<v
       });
       await batch.commit();
     } catch (e) {
-      console.warn('saveSystemLogsBatchFirestore error fallback:', e);
-      await Promise.allSettled(chunk.map(l => saveSystemLogFirestore(l)));
+      handleWriteCatch(e);
+      if (isFirestoreQuotaExceeded()) break;
     }
   }
 }
 
 export function subscribeSystemLogs(callback: (logs: SystemLog[]) => void, onError?: (err: any) => void): () => void {
+  if (isFirestoreQuotaExceeded()) return () => {};
   return onSnapshot(
     collection(db, 'systemLogs'),
     (snap) => {
@@ -872,13 +905,14 @@ export function subscribeSystemLogs(callback: (logs: SystemLog[]) => void, onErr
       callback(logs);
     },
     (err) => {
-      console.warn('subscribeSystemLogs error:', err);
+      handleWriteCatch(err);
       if (onError) onError(err);
     }
   );
 }
 
 export async function clearSystemLogsFirestore(): Promise<void> {
+  if (isFirestoreQuotaExceeded()) return;
   try {
     const snap = await getDocs(collection(db, 'systemLogs'));
     const batch = writeBatch(db);
@@ -887,7 +921,7 @@ export async function clearSystemLogsFirestore(): Promise<void> {
     });
     await batch.commit();
   } catch (error) {
-    console.warn('clearSystemLogsFirestore error:', error);
+    handleWriteCatch(error);
   }
 }
 

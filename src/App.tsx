@@ -299,8 +299,6 @@ export default function App() {
             try {
               localStorage.setItem('holerite_system_config', JSON.stringify(merged));
             } catch (e) {}
-            // Also synchronize with Firestore so cloud reflects the permanent server settings
-            saveSystemConfigFirestore(merged).catch(() => {});
             return merged;
           });
         }
@@ -319,12 +317,6 @@ export default function App() {
           saveTombstoneSet(STORAGE_KEY_DELETED_USERS, deletedUsersRef.current);
           saveTombstoneSet(STORAGE_KEY_DELETED_RECEIPTS, deletedReceiptsRef.current);
           saveTombstoneSet(STORAGE_KEY_DELETED_IRPF, deletedIrpfRef.current);
-          deletedEmployeesRef.current.forEach(code => {
-            deleteEmployeeFirestore(code).catch(() => {});
-          });
-          deletedReceiptsRef.current.forEach(recId => {
-            deleteReceiptFirestore(recId).catch(() => {});
-          });
         }
       })
       .catch(() => {});
@@ -467,14 +459,6 @@ export default function App() {
   useEffect(() => {
     const unsubEmployees = subscribeEmployees((remoteEmployees) => {
       if (remoteEmployees && remoteEmployees.length > 0) {
-        // Clean up any Firestore docs that were marked as deleted
-        remoteEmployees.forEach(e => {
-          const code = String(e.codigo).trim();
-          if (deletedEmployeesRef.current.has(code)) {
-            deleteEmployeeFirestore(code, e.id).catch(() => {});
-          }
-        });
-
         const validRemote = remoteEmployees.filter(
           e => !deletedEmployeesRef.current.has(String(e.codigo).trim())
         );
@@ -491,7 +475,6 @@ export default function App() {
             const code = String(e.codigo).trim();
             const existing = map.get(code);
             const verified = verifiedEmployeesMapRef.current.get(code);
-            // Se o registro remoto tinha salário corrompido (< 500, ex: 177), restaura o salário e dados oficiais verificados
             if (verified && (!e.salarioBase || e.salarioBase < 500)) {
               const healed: Employee = {
                 ...existing,
@@ -504,15 +487,8 @@ export default function App() {
                 dataAdmissao: verified.dataAdmissao || e.dataAdmissao
               };
               map.set(code, healed);
-              saveEmployeeFirestore(healed).catch(() => {});
             } else {
               map.set(code, { ...existing, ...e, codigo: code });
-            }
-          });
-          const remoteCodes = new Set(validRemote.map(e => String(e.codigo).trim()));
-          map.forEach((emp, code) => {
-            if (!remoteCodes.has(code) && !deletedEmployeesRef.current.has(code)) {
-              saveEmployeeFirestore(emp).catch(() => {});
             }
           });
           const merged = Array.from(map.values());
@@ -539,7 +515,6 @@ export default function App() {
               deletedReceiptsRef.current.add(r.id);
               tombstoneAdded = true;
             }
-            deleteReceiptFirestore(r.id, empCode, r.competencia).catch(() => {});
           }
         });
         if (tombstoneAdded) {
@@ -569,12 +544,6 @@ export default function App() {
           validRemote.forEach(r => {
             if (isReceiptMathematicallyValid(r)) {
               map.set(r.id, r);
-            }
-          });
-          const remoteIds = new Set(validRemote.map(r => r.id));
-          map.forEach((rec, id) => {
-            if (!remoteIds.has(id) && !deletedReceiptsRef.current.has(id)) {
-              saveReceiptFirestore(rec).catch(() => {});
             }
           });
           const merged = Array.from(map.values());
@@ -629,16 +598,6 @@ export default function App() {
 
     const unsubUsers = subscribeUsers((remoteUsers) => {
       if (remoteUsers && remoteUsers.length > 0) {
-        remoteUsers.forEach(u => {
-          const empCode = String(u.employeeCodigo || '').trim();
-          if (
-            (u.uid && deletedUsersRef.current.has(u.uid)) ||
-            (u.role === 'COLABORADOR' && empCode && deletedEmployeesRef.current.has(empCode))
-          ) {
-            deleteUserAccountFirestore(u.uid, empCode).catch(() => {});
-          }
-        });
-
         const validRemote = remoteUsers.filter(u => {
           const empCode = String(u.employeeCodigo || '').trim();
           if (u.uid && deletedUsersRef.current.has(u.uid)) return false;
@@ -664,7 +623,6 @@ export default function App() {
             if (existing && u.senha && (!existing.senha || existing.senha.trim() === '')) {
               const merged = { ...existing, senha: u.senha };
               map.set(key, merged);
-              saveUserAccount(merged).catch(() => {});
             }
           });
 
@@ -682,12 +640,6 @@ export default function App() {
     });
 
     const unsubIncome = subscribeToIncomeReports((remoteReports) => {
-      remoteReports.forEach(r => {
-        const bCod = String(r.beneficiario?.employeeCodigo || '').trim();
-        if (deletedIrpfRef.current.has(r.id) || (bCod && deletedEmployeesRef.current.has(bCod))) {
-          deleteIncomeReportFirestore(r.id).catch(() => {});
-        }
-      });
       const validReports = remoteReports.filter(r => {
         const bCod = String(r.beneficiario?.employeeCodigo || '').trim();
         if (deletedIrpfRef.current.has(r.id)) return false;

@@ -1,14 +1,20 @@
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
+import dns from 'dns';
 import { fileURLToPath } from 'url';
 import nodemailer from 'nodemailer';
 import { createServer as createViteServer } from 'vite';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, ThinkingLevel } from '@google/genai';
 import { parsePayrollText } from './src/utils/pdfParser';
 import { formatVisualLineWithColumns } from './src/utils/pdfExtractor';
 import { parseIncomeReportText } from './src/utils/incomeReportParser';
 import { PDFDocument } from 'pdf-lib';
+
+// Evita timeout de 120s (120000ms) de IPv6 em servidores Linux VPS ao conectar na API do Google Gemini
+try {
+  dns.setDefaultResultOrder('ipv4first');
+} catch {}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -308,14 +314,33 @@ function maskApiKey(key?: string): string {
   return `${clean.slice(0, 6)}••••••••${clean.slice(-4)}`;
 }
 
+const congestedModelsUntil: Record<string, number> = {};
+
+function markModelCongested(model: string) {
+  congestedModelsUntil[model] = Date.now() + 5 * 60 * 1000;
+}
+
+function isModelCongested(model: string): boolean {
+  const until = congestedModelsUntil[model];
+  if (!until) return false;
+  if (Date.now() > until) {
+    delete congestedModelsUntil[model];
+    return false;
+  }
+  return true;
+}
+
 function resolveGeminiCredentials(overrideApiKey?: string, overrideModel?: string) {
   const savedConfig = readServerConfig();
   const reqKey = typeof overrideApiKey === 'string' ? overrideApiKey.trim() : '';
-  const dbKey = typeof savedConfig.geminiApiKey === 'string' ? savedConfig.geminiApiKey.trim() : '';
+  const rawDbKey = typeof savedConfig.geminiApiKey === 'string' ? savedConfig.geminiApiKey.trim() : '';
   const envKey = typeof process.env.GEMINI_API_KEY === 'string' ? process.env.GEMINI_API_KEY.trim() : '';
 
+  // Se a chave salva no arquivo for um token efêmero de proxy (AQ.*) e houver envKey atualizado, prioriza envKey
+  const dbKey = rawDbKey.startsWith('AQ.') && envKey ? '' : rawDbKey;
+
   // Persist request key to server config if provided and not yet saved
-  if (reqKey && reqKey !== dbKey) {
+  if (reqKey && reqKey !== rawDbKey && !reqKey.startsWith('AQ.')) {
     try {
       writeServerConfig({
         geminiApiKey: reqKey,
@@ -324,13 +349,15 @@ function resolveGeminiCredentials(overrideApiKey?: string, overrideModel?: strin
     } catch (e) {}
   }
 
-  const apiKey = reqKey || dbKey || envKey;
+  const apiKey = reqKey || dbKey || envKey || rawDbKey;
   const keySource: 'request' | 'database' | 'env' | 'none' = reqKey
     ? 'request'
     : dbKey
     ? 'database'
     : envKey
     ? 'env'
+    : rawDbKey
+    ? 'database'
     : 'none';
 
   const preferredModel = (
@@ -339,9 +366,14 @@ function resolveGeminiCredentials(overrideApiKey?: string, overrideModel?: strin
     'gemini-3.8-flash'
   ).trim();
 
-  const models = Array.from(
-    new Set([preferredModel, 'gemini-3.8-flash', 'gemini-3-flash-preview', 'gemini-2.5-flash'])
+  const candidateModels = Array.from(
+    new Set([preferredModel, 'gemini-3.1-flash-lite', 'gemini-3-flash-preview', 'gemini-3.8-flash'])
   );
+  // Coloca modelos sem fila de congestionamento na frente
+  const models = [
+    ...candidateModels.filter(m => !isModelCongested(m)),
+    ...candidateModels.filter(m => isModelCongested(m))
+  ];
 
   const client = apiKey
     ? new GoogleGenAI({
@@ -349,6 +381,9 @@ function resolveGeminiCredentials(overrideApiKey?: string, overrideModel?: strin
         httpOptions: {
           headers: {
             'User-Agent': 'aistudio-build'
+          },
+          retryOptions: {
+            attempts: 1
           }
         }
       })
@@ -436,6 +471,9 @@ app.post('/api/ai/test', async (req, res) => {
 
     for (const model of creds.models) {
       try {
+        const supportsThinkingLow =
+          (model.startsWith('gemini-3') || model.startsWith('gemini-4')) &&
+          !model.includes('flash-lite');
         const response = await creds.client.models.generateContent({
           model,
           contents: [
@@ -443,7 +481,11 @@ app.post('/api/ai/test', async (req, res) => {
               text: 'Responda estritamente com o JSON: {"status":"ok","engine":"Google Gemini","ready":true}'
             }
           ],
-          config: { responseMimeType: 'application/json' }
+          config: {
+            responseMimeType: 'application/json',
+            abortSignal: AbortSignal.timeout(2500),
+            ...(supportsThinkingLow ? { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } } : {})
+          }
         });
         if (response && response.text) {
           modelUsed = model;
@@ -451,6 +493,9 @@ app.post('/api/ai/test', async (req, res) => {
         }
       } catch (err: any) {
         lastError = err?.message || String(err);
+        if (err?.name === 'AbortError' || err?.status === 503 || lastError.includes('503') || lastError.includes('UNAVAILABLE')) {
+          markModelCongested(model);
+        }
       }
     }
 
@@ -837,10 +882,17 @@ ${JSON.stringify(auditSummary)}`;
 
       for (const model of models) {
         try {
+          const supportsThinkingLow =
+            (model.startsWith('gemini-3') || model.startsWith('gemini-4')) &&
+            !model.includes('flash-lite');
           const response = await creds.client.models.generateContent({
             model,
             contents: [{ text: auditPrompt }],
-            config: { responseMimeType: 'application/json' }
+            config: {
+              responseMimeType: 'application/json',
+              abortSignal: AbortSignal.timeout(6000),
+              ...(supportsThinkingLow ? { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } } : {})
+            }
           });
           if (response && response.text) {
             aiModelUsed = model;
@@ -865,6 +917,9 @@ ${JSON.stringify(auditSummary)}`;
           }
         } catch (e: any) {
           lastAiError = e?.message || String(e);
+          if (e?.name === 'AbortError' || e?.status === 503 || lastAiError.includes('503') || lastAiError.includes('UNAVAILABLE')) {
+            markModelCongested(model);
+          }
           console.warn(`Gemini audit model ${model} failed:`, lastAiError);
         }
       }

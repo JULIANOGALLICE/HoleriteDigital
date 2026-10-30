@@ -1120,9 +1120,9 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
                       className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs bg-white font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                     >
                       <option value="gemini-3.8-flash">Gemini 3.8 Flash (Recomendado - Rápido e Alta Precisão)</option>
+                      <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite (Ultra-Rápido ~0.6s - Sem Fila)</option>
                       <option value="gemini-3-flash-preview">Gemini 3 Flash Preview (Auditoria Contábil)</option>
                       <option value="gemini-2.5-flash">Gemini 2.5 Flash (Estável Multipáginas)</option>
-                      <option value="gemini-2.5-pro">Gemini 2.5 Pro (Análise Profunda)</option>
                     </select>
                   </div>
 
