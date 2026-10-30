@@ -4,6 +4,7 @@ import { formatCurrencyBRL, generateIncomeReportPdf } from '../utils/incomeRepor
 import { SAMPLE_INCOME_REPORTS } from '../data/sampleIncomeReports';
 import { sendEvolutionWhatsAppMessage, formatWhatsAppPhone } from '../services/whatsappService';
 import { recordIncomeReportEvent } from '../services/loggerService';
+import { safeParseApiResponse } from '../services/geminiBrowserFallback';
 import {
   X,
   FileText,
@@ -170,7 +171,14 @@ export const IncomeReportsAdminModal: React.FC<IncomeReportsAdminModalProps> = (
         })
       });
 
-      const data = await res.json();
+      const parsed = await safeParseApiResponse(res);
+      if (parsed.isHtmlFallback || !parsed.data) {
+        throw new Error(
+          'O servidor VPS retornou HTML em vez da rota /api/ai/parse-income-report. Atualize e reinicie o processo Node na VPS (npm run build && pm2 restart all).'
+        );
+      }
+
+      const data = parsed.data;
 
       if (data.success && Array.isArray(data.reports) && data.reports.length > 0) {
         setImportedReports(data.reports);

@@ -5,6 +5,10 @@ import { SAMPLE_RAW_OCR } from '../data/sampleRawOCR';
 import { formatBRL } from '../utils/pdfGenerator';
 import { Employee, PayReceipt, SystemConfig } from '../types';
 import {
+  safeParseApiResponse,
+  parseAndAuditPayrollDirectBrowser
+} from '../services/geminiBrowserFallback';
+import {
   UploadCloud,
   FileText,
   CheckCircle2,
@@ -110,9 +114,22 @@ export const FileProcessorModal: React.FC<FileProcessorModalProps> = ({
         })
       });
 
-      const data = await res.json();
+      const parsedRes = await safeParseApiResponse(res);
 
-      if (data.success && Array.isArray(data.records) && data.records.length > 0) {
+      // Se a VPS retornou <!doctype html> (ex: Nginx servindo estático), executa a auditoria IA direto pelo navegador!
+      let data = parsedRes.data;
+      if (parsedRes.isHtmlFallback || !data) {
+        const textForBrowserAi = payload.text || rawExtractedText;
+        if (textForBrowserAi) {
+          data = await parseAndAuditPayrollDirectBrowser(
+            textForBrowserAi,
+            systemConfig?.geminiApiKey || '',
+            systemConfig?.aiModel || 'gemini-3.8-flash'
+          );
+        }
+      }
+
+      if (data && data.success && Array.isArray(data.records) && data.records.length > 0) {
         setParsedRecords(data.records);
         setParsingErrors([]);
         setEngineUsed('gemini');
@@ -125,11 +142,11 @@ export const FileProcessorModal: React.FC<FileProcessorModalProps> = ({
         return;
       }
 
-      if (data.code === 'MISSING_API_KEY' || data.code === 'AI_AUTH_ERROR') {
+      if (data?.code === 'MISSING_API_KEY' || data?.code === 'AI_AUTH_ERROR') {
         setAiMissingKeyError(true);
       }
 
-      throw new Error(data.message || 'A IA não retornou registros válidos.');
+      throw new Error(data?.message || 'A IA não retornou registros válidos.');
     } catch (err: any) {
       console.warn('Falha no processador IA, acionando fallback local:', err);
       setParsingErrors([

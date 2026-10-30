@@ -61,6 +61,12 @@ import {
   applySpreadsheetToEntities,
   SpreadsheetAnalysisResult
 } from '../utils/spreadsheetService';
+import {
+  safeParseApiResponse,
+  testGeminiDirectBrowser,
+  maskGeminiApiKey,
+  resolveStoredGeminiKey
+} from '../services/geminiBrowserFallback';
 
 interface SystemSettingsModalProps {
   isOpen: boolean;
@@ -143,20 +149,36 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
       setSpreadsheetSuccess(null);
       setAiTestResult(null);
 
-      // Consulta status da IA no servidor VPS
+      // Consulta status da IA no servidor VPS (com fallback caso Nginx retorne index.html)
       fetch('/api/ai/status')
-        .then(r => r.json())
-        .then(data => {
-          if (data && data.success) {
+        .then(r => safeParseApiResponse(r))
+        .then(parsed => {
+          if (!parsed.isHtmlFallback && parsed.data && parsed.data.success) {
             setServerAiStatus({
-              configured: Boolean(data.configured),
-              keySource: data.keySource || 'none',
-              maskedKey: data.maskedKey || '',
-              model: data.model || 'gemini-3.8-flash'
+              configured: Boolean(parsed.data.configured),
+              keySource: parsed.data.keySource || 'none',
+              maskedKey: parsed.data.maskedKey || '',
+              model: parsed.data.model || 'gemini-3.8-flash'
+            });
+          } else {
+            const localKey = resolveStoredGeminiKey(config?.geminiApiKey);
+            setServerAiStatus({
+              configured: Boolean(localKey),
+              keySource: localKey ? 'database' : 'none',
+              maskedKey: localKey ? maskGeminiApiKey(localKey) : '',
+              model: config?.aiModel || 'gemini-3.8-flash'
             });
           }
         })
-        .catch(() => {});
+        .catch(() => {
+          const localKey = resolveStoredGeminiKey(config?.geminiApiKey);
+          setServerAiStatus({
+            configured: Boolean(localKey),
+            keySource: localKey ? 'database' : 'none',
+            maskedKey: localKey ? maskGeminiApiKey(localKey) : '',
+            model: config?.aiModel || 'gemini-3.8-flash'
+          });
+        });
     }
   }, [isOpen, config, initialTab]);
 
@@ -258,17 +280,45 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
   const handleTestAiConnection = async () => {
     setIsTestingAi(true);
     setAiTestResult(null);
+    const trimmedKey = (formData.geminiApiKey || '').trim();
+    const preferredModel = formData.aiModel || 'gemini-3.8-flash';
+
     try {
       const res = await fetch('/api/ai/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          geminiApiKey: (formData.geminiApiKey || '').trim(),
-          aiModel: formData.aiModel || 'gemini-3.8-flash',
+          geminiApiKey: trimmedKey,
+          aiModel: preferredModel,
           saveToServer: true
         })
       });
-      const data = await res.json();
+
+      const parsed = await safeParseApiResponse(res);
+
+      // Se a VPS devolveu <!doctype html> (ex: Nginx servindo estático ou rota não proxiada),
+      // executa o teste oficial diretamente pelo navegador com a API do Google Gemini!
+      if (parsed.isHtmlFallback || !parsed.data) {
+        const directResult = await testGeminiDirectBrowser(trimmedKey, preferredModel);
+        setAiTestResult({
+          success: directResult.success,
+          message: directResult.message,
+          modelUsed: directResult.modelUsed,
+          durationMs: directResult.durationMs
+        });
+        if (directResult.success) {
+          setServerAiStatus({
+            configured: true,
+            keySource: 'database',
+            maskedKey: directResult.maskedKey || maskGeminiApiKey(trimmedKey),
+            model: directResult.modelUsed || preferredModel
+          });
+          confetti({ particleCount: 55, spread: 50, origin: { y: 0.6 } });
+        }
+        return;
+      }
+
+      const data = parsed.data;
       setAiTestResult({
         success: Boolean(data.success),
         message: data.message || (data.success ? 'Conexão com IA validada!' : 'Falha na conexão com a IA.'),
@@ -278,26 +328,47 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
       if (data.success) {
         setServerAiStatus({
           configured: true,
-          keySource: (formData.geminiApiKey || '').trim() ? 'database' : data.keySource || 'env',
-          maskedKey: data.maskedKey || '',
-          model: data.modelUsed || formData.aiModel || 'gemini-3.8-flash'
+          keySource: trimmedKey ? 'database' : data.keySource || 'env',
+          maskedKey: data.maskedKey || maskGeminiApiKey(trimmedKey),
+          model: data.modelUsed || preferredModel
         });
         confetti({ particleCount: 55, spread: 50, origin: { y: 0.6 } });
       }
     } catch (err: any) {
-      setAiTestResult({
-        success: false,
-        message: `Erro de comunicação ao testar a IA: ${err?.message || 'Erro'}`
-      });
+      // Fallback direto no navegador caso o fetch para /api/ai/test falhe na rede
+      try {
+        const directResult = await testGeminiDirectBrowser(trimmedKey, preferredModel);
+        setAiTestResult({
+          success: directResult.success,
+          message: directResult.message,
+          modelUsed: directResult.modelUsed,
+          durationMs: directResult.durationMs
+        });
+        if (directResult.success) {
+          setServerAiStatus({
+            configured: true,
+            keySource: 'database',
+            maskedKey: directResult.maskedKey || maskGeminiApiKey(trimmedKey),
+            model: directResult.modelUsed || preferredModel
+          });
+          confetti({ particleCount: 55, spread: 50, origin: { y: 0.6 } });
+        }
+      } catch (fallbackErr: any) {
+        setAiTestResult({
+          success: false,
+          message: `Erro de comunicação ao testar a IA: ${fallbackErr?.message || err?.message || 'Erro'}`
+        });
+      }
     } finally {
       setIsTestingAi(false);
     }
   };
 
   const handleSaveAiConfigNow = async () => {
+    const cleanKey = (formData.geminiApiKey || '').trim();
     const cleanConfig: SystemConfig = {
       ...formData,
-      geminiApiKey: (formData.geminiApiKey || '').trim(),
+      geminiApiKey: cleanKey,
       aiModel: formData.aiModel || 'gemini-3.8-flash',
       aiEnabled: formData.aiEnabled !== false
     };
@@ -306,6 +377,17 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
     try {
       localStorage.setItem('holerite_system_config', JSON.stringify(cleanConfig));
     } catch (e) {}
+
+    // Atualiza o status imediatamente com a chave salva no Firestore/localStorage
+    if (cleanKey) {
+      setServerAiStatus({
+        configured: true,
+        keySource: 'database',
+        maskedKey: maskGeminiApiKey(cleanKey),
+        model: cleanConfig.aiModel || 'gemini-3.8-flash'
+      });
+    }
+
     try {
       await fetch('/api/config', {
         method: 'POST',
@@ -313,13 +395,13 @@ export const SystemSettingsModal: React.FC<SystemSettingsModalProps> = ({
         body: JSON.stringify(cleanConfig)
       });
       const statusRes = await fetch('/api/ai/status');
-      const statusData = await statusRes.json();
-      if (statusData?.success) {
+      const parsedStatus = await safeParseApiResponse(statusRes);
+      if (!parsedStatus.isHtmlFallback && parsedStatus.data?.success) {
         setServerAiStatus({
-          configured: Boolean(statusData.configured),
-          keySource: statusData.keySource || 'database',
-          maskedKey: statusData.maskedKey || '',
-          model: statusData.model || cleanConfig.aiModel || 'gemini-3.8-flash'
+          configured: Boolean(parsedStatus.data.configured),
+          keySource: parsedStatus.data.keySource || 'database',
+          maskedKey: parsedStatus.data.maskedKey || maskGeminiApiKey(cleanKey),
+          model: parsedStatus.data.model || cleanConfig.aiModel || 'gemini-3.8-flash'
         });
       }
     } catch (e) {}
